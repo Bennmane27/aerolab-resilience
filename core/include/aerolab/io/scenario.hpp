@@ -97,7 +97,9 @@ struct Scenario {
   std::vector<SensorId> faultedSensors() const;
 };
 
-// Returns the default channel set: NAV-A, NAV-B, NAV-C (monitor only),
+// Returns the default channel set: NAV-A, NAV-B, NAV-C (no integrity layer at
+// all, not monitor-only: see defaultIntegrityFor in scenario.cpp for why the
+// control case has to carry no policy rather than an inert one),
 // NAV-D (innovation gating) and NAV-F (gating + solution separation).
 std::vector<NavigationChannelSpec> defaultChannels();
 

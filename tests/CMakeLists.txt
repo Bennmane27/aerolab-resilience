@@ -24,6 +24,9 @@ else()
 endif()
 
 set(AEROLAB_TEST_SOURCES
+    unit/test_types.cpp
+    unit/test_json.cpp
+    unit/test_scenario_loading.cpp
     unit/test_math.cpp
     unit/test_rng.cpp
     unit/test_truth.cpp

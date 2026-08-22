@@ -61,6 +61,25 @@ or any published figure.
 
 ### Fixed
 
+- **The line coverage floor of VNV-008 is met, at 92.7 %.** The measurement had
+  never run before this release; when it did, it reported 87.2 %, and the gap
+  was concentrated entirely in the input paths: the scenario loader, the JSON
+  reader and the enum vocabulary. The shipped suite exercised the fourteen
+  scenario files, all of which are correct by construction, so almost nothing
+  that REFUSES bad input had ever been executed. Three test files close it:
+  `test_types.cpp` pins every identifier the telemetry writes and the Web Lab is
+  forbidden from translating, `test_json.cpp` covers the escapes, the round trip
+  and every rejection SYS-010 requires to produce a diagnostic rather than a
+  crash, and `test_scenario_loading.cpp` checks that every field naming a fault
+  type, a sensor, a mission phase, a measurement type or a navigation mode
+  refuses a name it does not know, and says which name it was. The 90 % floor
+  was not moved.
+- **`defaultChannels` was documented as giving NAV-C a monitor-only integrity
+  layer.** It gives it none at all, which is what the comparison needs: measuring
+  NAV-C against NAV-D has to show the difference between having an integrity
+  layer and not having one, not between acting and not acting on a detection.
+  The implementation was right and said so; the header comment contradicted it.
+
 - **The aircraft moved in visible steps.** Two separate causes, both measured.
   `setFrame` ran on every step of the run loop, re-rendering the whole interface
   at display rate — 71 ms per frame, 14.5 fps. And the simulation advances in
