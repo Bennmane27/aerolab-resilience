@@ -96,8 +96,8 @@ TEST(Json, DecodesEveryStringEscape) {
 TEST(Json, DecodesUnicodeEscapesAcrossTheUtf8Boundaries) {
   // One byte, two bytes and three bytes: the three branches of the encoder.
   EXPECT_EQ(parseOrFail(R"("A")").asString(), "A");
-  EXPECT_EQ(parseOrFail(R"("é")").asString(), "\xC3\xA9");          // é
-  EXPECT_EQ(parseOrFail(R"("€")").asString(), "\xE2\x82\xAC");      // €
+  EXPECT_EQ(parseOrFail(R"("é")").asString(), "\xC3\xA9");      // é
+  EXPECT_EQ(parseOrFail(R"("€")").asString(), "\xE2\x82\xAC");  // €
 }
 
 TEST(Json, RejectsMalformedInputWithADiagnostic) {

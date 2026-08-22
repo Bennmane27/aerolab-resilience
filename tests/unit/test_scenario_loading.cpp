@@ -25,14 +25,13 @@ namespace {
 
 /// A minimal but complete scenario, in the YAML subset, with `extra` spliced in.
 std::string yamlScenario(const std::string& extra) {
-  return
-      "schema_version: 1\n"
-      "id: SCN-TEST\n"
-      "name: loader test\n"
-      "seed: 7\n"
-      "duration_s: 5.0\n"
-      "dt_s: 0.01\n" +
-      extra;
+  return "schema_version: 1\n"
+         "id: SCN-TEST\n"
+         "name: loader test\n"
+         "seed: 7\n"
+         "duration_s: 5.0\n"
+         "dt_s: 0.01\n" +
+         extra;
 }
 
 Scenario loadOrFail(const std::string& text) {
@@ -105,9 +104,9 @@ TEST(ScenarioLoading, ReadsTheSingleAxisConvenienceFormAndRefusesAnUnknownAxis) 
   }
 
   // offset_m is accepted as a synonym of final_offset_m.
-  const Scenario s = loadOrFail(yamlScenario(
-      "faults:\n  - type: gnss_position_step\n    target: gnss\n    axis: east\n"
-      "    offset_m: -42.0\n"));
+  const Scenario s = loadOrFail(
+      yamlScenario("faults:\n  - type: gnss_position_step\n    target: gnss\n    axis: east\n"
+                   "    offset_m: -42.0\n"));
   EXPECT_DOUBLE_EQ(s.faults[0].amplitude.y, -42.0);
 
   expectRefused(yamlScenario("faults:\n  - type: gnss_position_step\n    target: gnss\n"
@@ -152,22 +151,22 @@ TEST(ScenarioLoading, ReadsTheMeasurementTypeFilterAndRefusesAnUnknownOne) {
 TEST(ScenarioLoading, ReadsEveryAcceptanceCriterionField) {
   // DEV-007: the verdict in the manifest is the conjunction of these. A field
   // that is silently dropped turns a criterion into a comment.
-  const Scenario s = loadOrFail(yamlScenario(
-      "acceptance:\n"
-      "  - id: AC-9\n"
-      "    description: everything at once\n"
-      "    estimator: integrity_ekf\n"
-      "    max_position_rmse_m: 12.5\n"
-      "    max_error_m: 40.0\n"
-      "    max_horizontal_p95_m: 25.0\n"
-      "    max_time_to_detect_s: 3.5\n"
-      "    max_time_to_isolate_s: 6.0\n"
-      "    max_false_isolations: 2\n"
-      "    min_availability: 0.97\n"
-      "    require_detection: true\n"
-      "    require_isolation: true\n"
-      "    forbid_end_mode: UNSAFE\n"
-      "    require_end_mode: DEGRADED\n"));
+  const Scenario s =
+      loadOrFail(yamlScenario("acceptance:\n"
+                              "  - id: AC-9\n"
+                              "    description: everything at once\n"
+                              "    estimator: integrity_ekf\n"
+                              "    max_position_rmse_m: 12.5\n"
+                              "    max_error_m: 40.0\n"
+                              "    max_horizontal_p95_m: 25.0\n"
+                              "    max_time_to_detect_s: 3.5\n"
+                              "    max_time_to_isolate_s: 6.0\n"
+                              "    max_false_isolations: 2\n"
+                              "    min_availability: 0.97\n"
+                              "    require_detection: true\n"
+                              "    require_isolation: true\n"
+                              "    forbid_end_mode: UNSAFE\n"
+                              "    require_end_mode: DEGRADED\n"));
 
   ASSERT_EQ(s.acceptance.size(), 1u);
   const AcceptanceCriterion& a = s.acceptance[0];
@@ -219,13 +218,16 @@ TEST(ScenarioLoading, AnAbsentCriterionFieldStaysAbsentRatherThanDefaultingToZer
 
 TEST(ScenarioLoading, EveryNavigationModeCanBeNamedInAnAcceptanceBlock) {
   const std::pair<const char*, NavMode> modes[] = {
-      {"INITIALIZING", NavMode::kInitializing}, {"NORMAL", NavMode::kNormal},
-      {"DEGRADED", NavMode::kDegraded},         {"DEAD_RECKONING", NavMode::kDeadReckoning},
-      {"LOW_CONFIDENCE", NavMode::kLowConfidence}, {"UNSAFE", NavMode::kUnsafe},
+      {"INITIALIZING", NavMode::kInitializing},
+      {"NORMAL", NavMode::kNormal},
+      {"DEGRADED", NavMode::kDegraded},
+      {"DEAD_RECKONING", NavMode::kDeadReckoning},
+      {"LOW_CONFIDENCE", NavMode::kLowConfidence},
+      {"UNSAFE", NavMode::kUnsafe},
   };
   for (const auto& [name, expected] : modes) {
-    const Scenario s = loadOrFail(
-        yamlScenario(std::string("acceptance:\n  - id: AC-1\n    forbid_end_mode: ") + name + "\n"));
+    const Scenario s = loadOrFail(yamlScenario(
+        std::string("acceptance:\n  - id: AC-1\n    forbid_end_mode: ") + name + "\n"));
     ASSERT_EQ(s.acceptance.size(), 1u) << name;
     EXPECT_EQ(s.acceptance[0].forbidden_end_mode, expected) << name;
   }
@@ -236,16 +238,16 @@ TEST(ScenarioLoading, EveryNavigationModeCanBeNamedInAnAcceptanceBlock) {
 }
 
 TEST(ScenarioLoading, ReadsTheTrajectoryProfile) {
-  const Scenario s = loadOrFail(yamlScenario(
-      "trajectory:\n"
-      "  approach_speed_mps: 72.0\n"
-      "  taxi_speed_mps: 9.0\n"
-      "  initial_distance_to_threshold_m: 5200.0\n"
-      "  flare_height_m: 11.0\n"
-      "  rollout_decel_time_s: 21.0\n"
-      "  turn_radius_m: 1800.0\n"
-      "  base_leg_length_m: 2600.0\n"
-      "  roll_in_time_s: 4.0\n"));
+  const Scenario s =
+      loadOrFail(yamlScenario("trajectory:\n"
+                              "  approach_speed_mps: 72.0\n"
+                              "  taxi_speed_mps: 9.0\n"
+                              "  initial_distance_to_threshold_m: 5200.0\n"
+                              "  flare_height_m: 11.0\n"
+                              "  rollout_decel_time_s: 21.0\n"
+                              "  turn_radius_m: 1800.0\n"
+                              "  base_leg_length_m: 2600.0\n"
+                              "  roll_in_time_s: 4.0\n"));
   EXPECT_DOUBLE_EQ(s.profile.approach_speed_mps, 72.0);
   EXPECT_DOUBLE_EQ(s.profile.taxi_speed_mps, 9.0);
   EXPECT_DOUBLE_EQ(s.profile.initial_distance_to_threshold_m, 5200.0);

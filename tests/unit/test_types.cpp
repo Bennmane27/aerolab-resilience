@@ -36,8 +36,7 @@ void expectTotalAndDistinct(const std::set<Enum>& values, const char* fallback) 
     const std::string s = toString(v);
     EXPECT_NE(s, fallback) << "enumerator " << static_cast<int>(v)
                            << " has no case in its switch, so it serialises as the fallback";
-    EXPECT_TRUE(seen.insert(s).second)
-        << "two enumerators both serialise as '" << s << "'";
+    EXPECT_TRUE(seen.insert(s).second) << "two enumerators both serialise as '" << s << "'";
   }
   EXPECT_EQ(seen.size(), values.size());
 }
@@ -67,8 +66,8 @@ TEST(Types, SensorIdRoundTripsAndRejectsAnythingElse) {
   }
 
   SensorId out = SensorId::kImu;
-  EXPECT_FALSE(parseSensorId("GNSS", out));      // the tokens are case sensitive
-  EXPECT_FALSE(parseSensorId("gnss ", out));     // and not trimmed
+  EXPECT_FALSE(parseSensorId("GNSS", out));   // the tokens are case sensitive
+  EXPECT_FALSE(parseSensorId("gnss ", out));  // and not trimmed
   EXPECT_FALSE(parseSensorId("", out));
   EXPECT_FALSE(parseSensorId("magnetometer", out));
   EXPECT_FALSE(parseSensorId(nullptr, out));
@@ -86,9 +85,9 @@ TEST(Types, EveryMeasurementTypeSerialisesToItsDocumentedToken) {
   };
   for (const auto& [t, token] : expected) EXPECT_EQ(toString(t), token);
   expectTotalAndDistinct<MeasurementType>(
-      {MeasurementType::kGnssPosition, MeasurementType::kGnssVelocity,
-       MeasurementType::kImuSample, MeasurementType::kBaroAltitude,
-       MeasurementType::kVisionRelative, MeasurementType::kPseudorange},
+      {MeasurementType::kGnssPosition, MeasurementType::kGnssVelocity, MeasurementType::kImuSample,
+       MeasurementType::kBaroAltitude, MeasurementType::kVisionRelative,
+       MeasurementType::kPseudorange},
       "unknown");
 }
 
@@ -100,9 +99,9 @@ TEST(Types, ValidityDistinguishesAbsentFromNumericallyBroken) {
   EXPECT_STREQ(toString(Validity::kUnavailable), "unavailable");
   EXPECT_STREQ(toString(Validity::kInvalidNumeric), "invalid_numeric");
   EXPECT_STREQ(toString(Validity::kDropped), "dropped");
-  expectTotalAndDistinct<Validity>({Validity::kValid, Validity::kUnavailable,
-                                    Validity::kInvalidNumeric, Validity::kDropped},
-                                   "unknown");
+  expectTotalAndDistinct<Validity>(
+      {Validity::kValid, Validity::kUnavailable, Validity::kInvalidNumeric, Validity::kDropped},
+      "unknown");
 }
 
 TEST(Types, SensorStateKeepsIsolatedApartFromUnavailable) {
@@ -156,9 +155,12 @@ TEST(Types, EveryIntegrityReasonHasAStableCode) {
 
 TEST(Types, EveryNavModeSerialisesToItsDocumentedToken) {
   const std::map<NavMode, std::string> expected{
-      {NavMode::kInitializing, "INITIALIZING"}, {NavMode::kNormal, "NORMAL"},
-      {NavMode::kDegraded, "DEGRADED"},         {NavMode::kDeadReckoning, "DEAD_RECKONING"},
-      {NavMode::kLowConfidence, "LOW_CONFIDENCE"}, {NavMode::kUnsafe, "UNSAFE"},
+      {NavMode::kInitializing, "INITIALIZING"},
+      {NavMode::kNormal, "NORMAL"},
+      {NavMode::kDegraded, "DEGRADED"},
+      {NavMode::kDeadReckoning, "DEAD_RECKONING"},
+      {NavMode::kLowConfidence, "LOW_CONFIDENCE"},
+      {NavMode::kUnsafe, "UNSAFE"},
   };
   for (const auto& [m, token] : expected) EXPECT_EQ(toString(m), token);
   std::set<NavMode> all;
@@ -184,7 +186,7 @@ TEST(Types, MissionPhaseRoundTripsThroughItsName) {
   expectTotalAndDistinct<MissionPhase>(all, "UNKNOWN");
 
   MissionPhase out = MissionPhase::kCruise;
-  EXPECT_FALSE(parseMissionPhase("cruise", out));   // upper case, like the telemetry
+  EXPECT_FALSE(parseMissionPhase("cruise", out));  // upper case, like the telemetry
   EXPECT_FALSE(parseMissionPhase("GO_AROUND", out));
   EXPECT_FALSE(parseMissionPhase("", out));
   EXPECT_FALSE(parseMissionPhase(nullptr, out));
