@@ -6,8 +6,8 @@ message: >-
   aviation standard.
 type: software
 authors:
-  - family-names: Bennmane
-    given-names: Benn
+  - family-names: Bennani
+    given-names: Othmane
 repository-code: "https://github.com/Bennmane27/aerolab-resilience"
 license: MIT
 version: 1.0.0

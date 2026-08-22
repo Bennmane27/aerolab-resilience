@@ -61,6 +61,8 @@ interface CatalogEntry {
 }
 
 const REPO_URL = "https://github.com/Bennmane27/aerolab-resilience";
+const AUTHOR = "Othmane Bennani";
+const LINKEDIN_URL = "https://www.linkedin.com/in/bennani-othmane/";
 const CHART_SAMPLE_STEP_S = 0.05;  // one chart sample per 50 ms of simulated time
 const UI_REFRESH_MS = 120;         // chart / table refresh cadence, speed independent
 
@@ -573,8 +575,11 @@ function Landing({
           <button type="button" className="primary" onClick={onStart} disabled={!ready}>
             {ready ? t.landing.start : t.landing.loading}
           </button>
-          <a href={REPO_URL}>
+          <a href={REPO_URL} target="_blank" rel="noreferrer noopener">
             <button type="button">{t.landing.source}</button>
+          </a>
+          <a href={LINKEDIN_URL} target="_blank" rel="noreferrer noopener">
+            <button type="button">{t.landing.contact}</button>
           </a>
         </div>
       </div>
@@ -597,12 +602,23 @@ function Landing({
           menu item away. */}
       <GuideSections onStart={onStart} />
 
-      {core && (
-        <p className="footer">
-          core {core.build.version} · commit {core.build.commit} · {core.build.compiler} · schema v
-          {core.build.telemetry_schema}
-        </p>
-      )}
+      <p className="footer">
+        {t.landing.author}{" "}
+        <a href={LINKEDIN_URL} target="_blank" rel="noreferrer noopener">
+          {AUTHOR}
+        </a>{" "}
+        ·{" "}
+        <a href={REPO_URL} target="_blank" rel="noreferrer noopener">
+          GitHub
+        </a>
+        {core && (
+          <>
+            <br />
+            core {core.build.version} · commit {core.build.commit} · {core.build.compiler} · schema
+            v{core.build.telemetry_schema}
+          </>
+        )}
+      </p>
     </div>
   );
 }

@@ -46,6 +46,8 @@ export interface Strings {
     start: string;
     loading: string;
     source: string;
+    contact: string;
+    author: string;
     audience: {
       publicLabel: string;
       publicText: string;
@@ -294,6 +296,8 @@ const en: Strings = {
     start: "Choose a scenario",
     loading: "Loading the core…",
     source: "Source and benchmark report",
+    contact: "Contact on LinkedIn",
+    author: "Built by",
     audience: {
       publicLabel: "If you are not an engineer",
       publicText:
@@ -632,6 +636,8 @@ const fr: Strings = {
     start: "Choisir un scénario",
     loading: "Chargement du cœur…",
     source: "Code source et rapport de campagne",
+    contact: "Me contacter sur LinkedIn",
+    author: "Réalisé par",
     audience: {
       publicLabel: "Si vous n’êtes pas ingénieur",
       publicText:
