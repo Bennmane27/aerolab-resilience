@@ -20,17 +20,9 @@ or any published figure.
   a chi-square gate catching a 100 m jump has demonstrated that it is wired up
   and almost nothing else, and the commentary says so. The first version was a
   translation of the screen; reading it taught you nothing the event log had not
-  already said in its own vocabulary.
-
-- **Live commentary on the run.** The integrity log answers "what did the policy
-  decide"; it does not answer "why is this the interesting second". A panel at
-  the top of the Live Lab now says, in plain language, which moment of the
-  scenario is on screen — counting down to the injection, naming the fault and
-  the source it is applied to, naming the first architecture to react and after
-  how long, and what to watch next. It derives everything from the frame, the
-  scenario file and the integrity events; it states no number the engine did not
-  produce. Detections are credited only on sources the scenario actually
-  faulted, which is the same rule KF-007 forced on the metric.
+  already said in its own vocabulary. It derives everything from the frame, the
+  scenario file and the engine's events, and states no number the engine did not
+  produce.
 - **French for the scenario catalogue.** The scenario files stay in technical
   English — they carry the requirement identifiers and the campaign reads them —
   but the fourteen names, descriptions and objectives now have French text in
