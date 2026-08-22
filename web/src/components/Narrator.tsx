@@ -1,24 +1,41 @@
-// AEROLAB RESILIENCE - live commentary panel.
+// AEROLAB RESILIENCE - live commentary, over the 3D view.
 //
-// Derives, from the frame and the scenario file alone, which moment of the run
-// is on screen, and says so in plain language. It invents nothing: the fault
-// window comes from the scenario, the detections come from the integrity events
-// the engine emitted, and the errors are the ones in the frame.
+// Two things this is not.
 //
-// It exists because the integrity log answers "what did the policy decide" and
-// not "why is this the interesting second of the run". Someone who does not
-// already know what a NIS gate is watches a nominal approach, then a number
-// changes, and nothing tells them that was the point.
+// It is not a status line. It accumulates: every entry stays, and the panel
+// scrolls, because the run moves faster than anyone reads and the moment worth
+// understanding is usually the one that just went past. It follows the newest
+// entry only while you are already at the bottom; scroll up and it holds still.
+//
+// It is not a translation of the screen. The first version said "X flagged GNSS
+// 0.3 s after the injection", which is what the event log already said in its
+// own vocabulary — reading it taught you nothing. Every entry now carries the
+// MECHANISM: which test fired, why that test and not another, what firing it
+// actually proves, and where the same test is known to fail. The engine gives a
+// reason code with every event, which is what makes that possible without
+// guessing.
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Frame, ScenarioInfo } from "../core/session";
 import { ESTIMATOR_COLORS } from "../core/session";
 import type { LogEntry } from "./Panels";
 import { useLang } from "../i18n";
-import type { Beat } from "../i18n/narration";
+import type { Explained } from "../i18n/narration";
 
-type Tone = "idle" | "nominal" | "alert" | "acting" | "done";
+type Tone = "idle" | "nominal" | "fault" | "acting" | "done";
 
-/** The beat, plus how loudly to draw it. */
-function chooseBeat(
+interface Entry extends Explained {
+  key: string;
+  t: number | null;
+  tone: Tone;
+}
+
+/**
+ * Builds the whole commentary from the scenario and the event log.
+ *
+ * Derived rather than accumulated, so it survives a restart, a language change
+ * and scrubbing without keeping any state of its own.
+ */
+function buildEntries(
   frame: Frame | null,
   scenario: ScenarioInfo,
   log: LogEntry[],
@@ -27,81 +44,120 @@ function chooseBeat(
   t: ReturnType<typeof useLang>["t"],
   num: (v: number, d?: number) => string,
   finished: boolean
-): { beat: Beat; tone: Tone } {
-  if (!frame) return { beat: n.waiting, tone: "idle" };
-
-  const now = frame.t;
+): Entry[] {
+  const entries: Entry[] = [];
   const faults = scenario.faults ?? [];
-  if (faults.length === 0) return { beat: n.nominal, tone: "nominal" };
-
-  const faultedTargets = new Set(faults.map((f) => f.target));
-  const named = (target: string) => t.eventLog.sensorNames[target] ?? target;
+  const named = (id: string) => t.eventLog.sensorNames[id] ?? id;
   const faultWords = (type: string) => t.eventLog.faultTypes[type] ?? type;
-
-  // Detections and isolations, restricted to sources the scenario actually
-  // faulted. Crediting any source leaving ACTIVE is exactly the mistake KF-007
-  // records, and it would be just as wrong in a sentence as in a metric.
-  const onFaulted = log.filter(
-    (e) => e.kind === "integrity" && e.sensor !== undefined && faultedTargets.has(e.sensor)
-  );
-  const firstDetection = onFaulted.find((e) => e.to !== undefined && e.to !== "ACTIVE");
-  const firstIsolation = onFaulted.find((e) => e.to === "ISOLATED");
-
-  // Best and worst of the architectures that produced a solution this frame.
-  const scored = Object.keys(ESTIMATOR_COLORS)
-    .map((id) => ({ id, err: frame.solutions[id]?.err_m }))
-    .filter((s): s is { id: string; err: number } => Number.isFinite(s.err))
-    .sort((a, b) => a.err - b.err);
-  const best = scored[0];
-  const worst = scored[scored.length - 1];
-  const spread = (): [string, string, string, string] => [
-    labels[best?.id ?? ""] ?? "—",
-    best ? num(best.err, 1) : "—",
-    labels[worst?.id ?? ""] ?? "—",
-    worst ? num(worst.err, 1) : "—",
-  ];
-
-  if (finished) return { beat: n.finished(...spread()), tone: "done" };
-
   const start = scenario.fault_start_s;
-  const end = scenario.fault_end_s;
-  const next = faults.find((f) => f.start_s >= start) ?? faults[0];
+  const now = frame?.t ?? 0;
 
-  if (now < start) {
-    return {
-      beat: n.beforeFault(num(Math.max(0, start - now), 0), faultWords(next.type), named(next.target)),
+  // --- opening -------------------------------------------------------------
+  if (faults.length === 0) {
+    entries.push({ key: "open", t: 0, tone: "nominal", ...n.openingNominal });
+  } else {
+    const first = faults.find((f) => f.start_s >= start) ?? faults[0];
+    entries.push({
+      key: "open",
+      t: 0,
       tone: "nominal",
-    };
+      ...n.opening(faultWords(first.type), named(first.target), num(Math.max(0, start - now), 0)),
+    });
   }
 
-  if (now <= end) {
-    if (firstIsolation) {
-      return {
-        beat: n.isolated(
-          labels[firstIsolation.estimator ?? ""] ?? firstIsolation.estimator ?? "—",
-          named(firstIsolation.sensor ?? ""),
-          num(Math.max(0, (firstDetection ?? firstIsolation).t - start), 1)
-        ),
-        tone: "acting",
-      };
+  // --- what the fault engine did ------------------------------------------
+  for (const e of log) {
+    if (e.kind !== "fault") continue;
+    const target = named(e.sensor ?? "");
+    if (e.activated) {
+      const base = n.faultArmed(faultWords(e.faultType ?? ""), target);
+      const mechanism = n.faultMechanism[e.faultType ?? ""];
+      entries.push({
+        key: `fault-on-${e.faultType}-${e.t}`,
+        t: e.t,
+        tone: "fault",
+        what: base.what,
+        why: mechanism ? `${mechanism} ${base.why}` : base.why,
+      });
+    } else {
+      entries.push({ key: `fault-off-${e.t}`, t: e.t, tone: "nominal", ...n.faultEnded(target) });
     }
-    if (firstDetection) {
-      return {
-        beat: n.detected(
-          labels[firstDetection.estimator ?? ""] ?? firstDetection.estimator ?? "—",
-          num(Math.max(0, firstDetection.t - start), 1),
-          named(firstDetection.sensor ?? "")
-        ),
-        tone: "acting",
-      };
-    }
-    return {
-      beat: n.undetected(faultWords(next.type), named(next.target), num(now - start, 0)),
-      tone: "alert",
-    };
   }
 
-  return { beat: n.over(...spread()), tone: "done" };
+  // --- how each architecture reacted, once per architecture and state ------
+  // One entry per (architecture, target, new state): the engine can emit the
+  // same transition repeatedly, and repeating the explanation would bury the
+  // entries that say something new.
+  const seen = new Set<string>();
+  for (const e of log) {
+    if (e.kind !== "integrity" || !e.to || e.to === "ACTIVE") continue;
+    const key = `${e.estimator}-${e.sensor}-${e.to}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const base = n.reaction(
+      labels[e.estimator ?? ""] ?? e.estimator ?? "—",
+      named(e.sensor ?? ""),
+      e.to,
+      num(Math.max(0, e.t - start), 1)
+    );
+    entries.push({
+      key: `react-${key}`,
+      t: e.t,
+      tone: "acting",
+      what: base.what,
+      why: n.reasonMechanism[e.reason ?? ""] ?? base.why,
+    });
+  }
+
+  // --- silence is a result too --------------------------------------------
+  const reacted = log.some((e) => e.kind === "integrity" && e.to && e.to !== "ACTIVE");
+  if (faults.length > 0 && now > start + 6 && !reacted) {
+    entries.push({
+      key: "silence",
+      t: null,
+      tone: "fault",
+      ...n.silence(num(now - start, 0)),
+    });
+  }
+
+  // --- an estimate that has left the possible ------------------------------
+  if (frame) {
+    for (const [id, s] of Object.entries(frame.solutions)) {
+      if (-s.d >= 0) continue;
+      entries.push({
+        key: `below-${id}`,
+        t: null,
+        tone: "fault",
+        ...n.belowGround(labels[id] ?? id),
+      });
+    }
+  }
+
+  // --- the comparison ------------------------------------------------------
+  if (finished && frame) {
+    const scored = Object.keys(ESTIMATOR_COLORS)
+      .map((id) => ({ id, err: frame.solutions[id]?.err_m }))
+      .filter((x): x is { id: string; err: number } => Number.isFinite(x.err))
+      .sort((a, b) => a.err - b.err);
+    if (scored.length > 1) {
+      const best = scored[0];
+      const worst = scored[scored.length - 1];
+      entries.push({
+        key: "done",
+        t: frame.t,
+        tone: "done",
+        ...n.finished(
+          labels[best.id] ?? best.id,
+          num(best.err, 1),
+          labels[worst.id] ?? worst.id,
+          num(worst.err, 1)
+        ),
+      });
+    }
+  }
+
+  entries.sort((a, b) => (a.t ?? Number.MAX_SAFE_INTEGER) - (b.t ?? Number.MAX_SAFE_INTEGER));
+  return entries;
 }
 
 export function Narrator({
@@ -118,19 +174,48 @@ export function Narrator({
   finished: boolean;
 }) {
   const { t, num, narration, scenarioText } = useLang();
-  const { beat, tone } = chooseBeat(frame, scenario, log, labels, narration, t, num, finished);
+  const entries = buildEntries(frame, scenario, log, labels, narration, t, num, finished);
+
+  const listRef = useRef<HTMLDivElement>(null);
+  // Follow the newest entry, but only while the reader is already at the
+  // bottom. Scrolling up to read what happened is the whole point of keeping a
+  // history, and yanking the view back would defeat it.
+  const [pinned, setPinned] = useState(true);
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    setPinned(el.scrollHeight - el.clientHeight - el.scrollTop < 24);
+  };
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el && pinned) el.scrollTop = el.scrollHeight;
+  }, [entries.length, pinned]);
+  useEffect(() => setPinned(true), [scenario.id]);
+
+  const objective = scenarioText(scenario.id)?.objective ?? scenario.objective;
 
   return (
-    <div className={`narrator tone-${tone}`}>
+    <section className="narrator" aria-label={narration.title}>
+      <header className="narrator-head">
+        <h4>{narration.title}</h4>
+        {!pinned && <span className="narrator-hint">{narration.historyHint}</span>}
+      </header>
       <p className="narrator-objective">
-        <b>{narration.objectiveLabel}</b>{" "}
-        — {scenarioText(scenario.id)?.objective ?? scenario.objective ?? scenario.description}
+        <b>{narration.objectiveLabel}</b> — {objective}
       </p>
-      <h4 className="narrator-headline">{beat.headline}</h4>
-      <p className="narrator-text">{beat.text}</p>
-      <p className="narrator-watch">
-        <b>{narration.watchLabel}</b> {beat.watch}
-      </p>
-    </div>
+      <div className="narrator-list" ref={listRef} onScroll={onScroll} role="log">
+        {entries.length === 0 && <p className="empty">{narration.empty}</p>}
+        {entries.map((e, i) => (
+          <article className={`narrator-entry tone-${e.tone}`} key={e.key}>
+            <div className="narrator-entry-head">
+              {e.t !== null && <span className="narrator-t">{num(e.t, 1)} s</span>}
+              <b>{e.what}</b>
+            </div>
+            <p>{e.why}</p>
+            {i === entries.length - 1 && <span className="narrator-latest" aria-hidden="true" />}
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }

@@ -151,6 +151,11 @@ export interface LogEntry {
   estimator?: string;
   sensor?: string;
   to?: string;
+  /** Engine reason code: which check actually fired. */
+  reason?: string;
+  /** Fault type identifier, for entries of kind "fault". */
+  faultType?: string;
+  activated?: boolean;
 }
 
 export function EventLog({ entries, empty }: { entries: LogEntry[]; empty: string }) {

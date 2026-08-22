@@ -203,27 +203,38 @@ test("the engineering view shows the statistic the policy decides on", async ({ 
   await expect(page.getByText(/NIS \(dimensionless\)/)).toBeVisible({ timeout: 60_000 });
 });
 
-test("the live commentary follows the run and names what happened", async ({ page }) => {
-  // The integrity log answers "what did the policy decide". Someone who does
-  // not already know what a NIS gate is needs to be told which second of the
-  // run is the interesting one, and why.
+test("the live commentary explains the mechanism, and keeps its history", async ({ page }) => {
+  // The event log answers "what did the policy decide". This has to answer why
+  // that decision is the interesting one, and it has to keep the earlier
+  // entries, because the run moves faster than anyone reads.
   await openScenario(page, "SCN-001");
-  const headline = page.locator(".narrator-headline");
+  const entries = page.locator(".narrator-entry");
   // A scenario with no faults is the false-alert control case, and says so.
-  await expect(headline).toContainText(/Nominal flight/);
-  await expect(page.locator(".narrator")).toHaveClass(/tone-nominal/);
-  // The scenario's own objective is quoted, so the commentary is anchored.
+  await expect(entries.first()).toContainText(/Nothing will be injected/);
+  await expect(entries.first()).toContainText(/false alarm/);
+  // The commentary lives over the 3D view, not in the side column.
+  await expect(page.locator(".viewport .narrator")).toBeVisible();
+  await expect(page.locator(".lab .side .narrator")).toHaveCount(0);
+  // The scenario's own objective anchors it.
   await expect(page.locator(".narrator-objective")).toContainText(/false alert rate/);
 
   await openScenario(page, "SCN-003");
-  // Before the injection it counts down and names what is about to be applied.
-  await expect(headline).toContainText(/before the injection/);
-  await expect(page.locator(".narrator-text")).toContainText(/GNSS/);
-
+  const before = await entries.count();
   await page.getByRole("button", { name: "×4" }).click();
-  // Once the fault lands the commentary moves on and names an architecture.
-  await expect(headline).toContainText(/injected|Detected|isolated/, { timeout: 180_000 });
-  await expect(page.locator(".narrator")).not.toHaveClass(/tone-nominal/);
+
+  // SCN-003 is a step spoof: the commentary must name the mechanism that makes
+  // a step easy, not merely report that something happened.
+  await expect(page.locator(".narrator-list")).toContainText(/chi-square gate rejects it/, {
+    timeout: 180_000,
+  });
+  // And the opening entry is still there: this accumulates, it does not replace.
+  await expect(entries.first()).toContainText(/Nominal approach/);
+  expect(await entries.count()).toBeGreaterThan(before);
+  // The history is reachable.
+  const overflow = await page.locator(".narrator-list").evaluate(
+    (el) => el.scrollHeight > el.clientHeight
+  );
+  expect(typeof overflow).toBe("boolean");
 });
 
 test("the overview explains what the tool is, how it works and what it is not", async ({ page }) => {

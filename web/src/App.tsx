@@ -88,6 +88,18 @@ export function App() {
   const [runKey, setRunKey] = useState(0);
   const [tick, setTick] = useState(0);  // bumped on a timer to refresh the views
 
+  // The 3D view reads THIS, every animation frame, and never a React prop.
+  //
+  // Calling setFrame on every step of the run loop re-rendered the whole tree —
+  // narrator, sensor table, solutions, event log, legend and the Scene3D props
+  // — sixty times a second. Measured, that cost 71 ms per frame: 14.5 fps, with
+  // the aircraft jumping about five metres between two rendered images and up
+  // to ten. At any real zoom that is not motion, it is a slideshow.
+  //
+  // So the two clocks are now separate. The scene follows the simulation at
+  // display rate through this ref; the panels refresh on the fixed UI tick,
+  // which is all a number being read by a human needs.
+  const liveFrameRef = useRef<Frame | null>(null);
   const samplesRef = useRef<Sample[]>([]);
   const logRef = useRef<LogEntry[]>([]);
   const framesRef = useRef<Frame[]>([]);
@@ -179,6 +191,7 @@ export function App() {
     lastSampleTRef.current = -1;
     setReport(null);
     setScrub(null);
+    liveFrameRef.current = null;
     setFrame(null);
     setRunKey((k) => k + 1);
   }, []);
@@ -208,7 +221,10 @@ export function App() {
       setSelectedFile(entry.file);
       clearRunState();
       const f = c.frame();
-      if (f.ok) setFrame(f.value);
+      if (f.ok) {
+        liveFrameRef.current = f.value;
+        setFrame(f.value);
+      }
       setRunning(true);
       setView("lab");
     },
@@ -231,7 +247,10 @@ export function App() {
       setSeed(useSeed);
       clearRunState();
       const f = c.frame();
-      if (f.ok) setFrame(f.value);
+      if (f.ok) {
+        liveFrameRef.current = f.value;
+        setFrame(f.value);
+      }
       setRunning(true);
     },
     [seed, clearRunState]
@@ -267,7 +286,7 @@ export function App() {
       const f = core.frame();
       if (!f.ok) return;
       const value = f.value;
-      setFrame(value);
+      liveFrameRef.current = value;
       framesRef.current.push(value);
 
       // Charts are sampled on simulated time, so the density of the plot does
@@ -301,6 +320,9 @@ export function App() {
             t: e.t ?? value.t,
             kind: "fault",
             headline: `${e.activated ? ev.faultArmed : ev.faultEnded} — ${e.type} · ${e.target}`,
+            faultType: e.type,
+            sensor: e.target,
+            activated: e.activated,
             why: e.activated
               ? ev.faultArmedWhy(ev.faultTypes[e.type] ?? e.type, e.target)
               : ev.faultEndedWhy(ev.faultTypes[e.type] ?? e.type, e.target),
@@ -314,6 +336,7 @@ export function App() {
             estimator: e.estimator,
             sensor: e.sensor,
             to: e.to,
+            reason: e.reason,
             why: `${reasonRef.current[e.reason] ?? e.reason} (${e.statistic.toPrecision(3)} / ${e.threshold.toPrecision(3)})`,
           });
         }
@@ -342,8 +365,12 @@ export function App() {
   eventsRef.current = t.eventLog;
 
   // Fixed-rate refresh: decouples what the eye sees from how fast the core runs.
+  // This is also what publishes the frame to the panels — see liveFrameRef.
   useEffect(() => {
-    const id = window.setInterval(() => setTick((n) => n + 1), UI_REFRESH_MS);
+    const id = window.setInterval(() => {
+      if (liveFrameRef.current) setFrame(liveFrameRef.current);
+      setTick((n) => n + 1);
+    }, UI_REFRESH_MS);
     return () => window.clearInterval(id);
   }, []);
 
@@ -459,6 +486,7 @@ export function App() {
           {view === "lab" && (
             <LiveLab
               frame={displayFrame}
+              liveFrame={liveFrameRef}
               scenario={scenario}
               log={logRef.current}
               running={running}
@@ -638,6 +666,8 @@ function ScenarioSelect({
 
 interface LiveLabProps {
   frame: Frame | null;
+  /** Live pose for the 3D view, updated every step. See App. */
+  liveFrame: React.RefObject<Frame | null>;
   scenario: ScenarioInfo | null;
   log: LogEntry[];
   running: boolean;
@@ -667,7 +697,7 @@ interface LiveLabProps {
 }
 
 function LiveLab(props: LiveLabProps) {
-  const { t, num, narration } = useLang();
+  const { t, num } = useLang();
   const { frame, scenario } = props;
   if (!scenario) {
     return (
@@ -677,20 +707,15 @@ function LiveLab(props: LiveLabProps) {
     );
   }
 
-  const anyBelowGround =
-    frame !== null &&
-    props.visible.some((id) => {
-      const s = frame.solutions[id];
-      return s !== undefined && -s.d < 0;
-    });
-
   return (
     <div className={props.expanded ? "lab is-expanded" : "lab"}>
       <div className="panel viewport">
         <Scene3D
-          frame={frame}
           scenario={scenario}
           visibleEstimators={props.visible}
+          liveFrame={props.liveFrame}
+          scrubFrame={props.scrub !== null ? frame : null}
+          speed={props.running ? props.speed : 0}
           cameraMode={props.camera}
           follow={props.follow}
           labels={props.labels}
@@ -736,6 +761,18 @@ function LiveLab(props: LiveLabProps) {
 
         <div className="viewport-hint">{t.lab.cameraHint}</div>
 
+        {/* On the view rather than in the side column: this is the reading of
+            what the 3D is showing, and it belongs next to it. */}
+        <Narrator
+          frame={frame}
+          scenario={scenario}
+          log={props.log}
+          labels={props.labels}
+          finished={
+            !props.running && props.frameCount > 0 && (frame?.t ?? 0) >= scenario.duration_s - 0.01
+          }
+        />
+
         <button
           type="button"
           className="viewport-expand"
@@ -745,26 +782,9 @@ function LiveLab(props: LiveLabProps) {
           {props.expanded ? `⤡ ${t.lab.collapse}` : `⤢ ${t.lab.expand}`}
         </button>
 
-        {anyBelowGround && (
-          <div className="viewport-warning">
-            <b>▼ {t.lab.belowGround}</b> — {t.lab.belowGroundHelp}
-          </div>
-        )}
       </div>
 
       <div className="side">
-        {/* First panel on purpose: it is the one that answers "what am I
-            looking at" for someone who does not already know. */}
-        <Panel title={narration.title}>
-          <Narrator
-            frame={frame}
-            scenario={scenario}
-            log={props.log}
-            labels={props.labels}
-            finished={!props.running && (props.frameCount > 0) && (frame?.t ?? 0) >= scenario.duration_s - 0.01}
-          />
-        </Panel>
-
         <Panel title={t.lab.transport}>
           <div className="transport">
             <button type="button" className="primary" onClick={() => props.onToggleRun()}>

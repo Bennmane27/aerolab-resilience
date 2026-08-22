@@ -56,7 +56,23 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<LanguageContextValue>(() => {
-    const formatter = new Intl.NumberFormat(lang === "fr" ? "fr-FR" : "en-GB");
+    // Cached per digit count. Constructing an Intl.NumberFormat is expensive
+    // and this is called for every number on screen on every refresh; a CPU
+    // profile of the Live Lab put a fresh construction per call among the top
+    // JavaScript costs of the whole page.
+    const locale = lang === "fr" ? "fr-FR" : "en-GB";
+    const formatters = new Map<number, Intl.NumberFormat>();
+    const formatterFor = (digits: number) => {
+      let f = formatters.get(digits);
+      if (!f) {
+        f = new Intl.NumberFormat(locale, {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        });
+        formatters.set(digits, f);
+      }
+      return f;
+    };
     return {
       lang,
       setLang,
@@ -65,13 +81,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       guide: GUIDE[lang],
       narration: NARRATION[lang],
       scenarioText: (id: string) => scenarioText(lang, id),
-      num: (v: number, digits = 2) => {
-        if (!Number.isFinite(v)) return "—";
-        return new Intl.NumberFormat(lang === "fr" ? "fr-FR" : "en-GB", {
-          minimumFractionDigits: digits,
-          maximumFractionDigits: digits,
-        }).format(v) || formatter.format(v);
-      },
+      num: (v: number, digits = 2) => (Number.isFinite(v) ? formatterFor(digits).format(v) : "—"),
     };
   }, [lang, setLang]);
 

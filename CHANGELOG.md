@@ -12,6 +12,16 @@ or any published figure.
 
 ### Added
 
+- **The live commentary explains the mechanism, and keeps its history.** It sits
+  over the 3D view now, scrolls, and follows the newest entry only while the
+  reader is already at the bottom. Every entry is keyed on the engine's own
+  reason code, so it names which check fired, why that check and not another,
+  what firing it actually proves, and where the same check is known to fail —
+  a chi-square gate catching a 100 m jump has demonstrated that it is wired up
+  and almost nothing else, and the commentary says so. The first version was a
+  translation of the screen; reading it taught you nothing the event log had not
+  already said in its own vocabulary.
+
 - **Live commentary on the run.** The integrity log answers "what did the policy
   decide"; it does not answer "why is this the interesting second". A panel at
   the top of the Live Lab now says, in plain language, which moment of the
@@ -59,6 +69,27 @@ or any published figure.
 
 ### Fixed
 
+- **The aircraft moved in visible steps.** Two separate causes, both measured.
+  `setFrame` ran on every step of the run loop, re-rendering the whole interface
+  at display rate — 71 ms per frame, 14.5 fps. And the simulation advances in
+  fixed 10 ms quanta that never land on a display refresh: at x1 the aircraft
+  covers 1.17 m per frame but could only ever be drawn at a multiple of 0.7 m,
+  which is sixty percent jitter in the per-frame displacement and no amount of
+  GPU fixes it. The scene now reads the pose from a ref inside its own render
+  loop, and interpolates between the two samples that bracket the instant being
+  drawn. Measured on the same run, the spread of per-frame displacement fell
+  from p95/p50 = 2.14 to 1.24. Truth and estimates are interpolated to the SAME
+  render time, so the line between them stays the error at that instant; the
+  numbers in the legend and the tables come from the sampled frame, never from
+  the interpolated pose.
+- **Estimated positions were drawn as spheres.** A sphere is an object with a
+  volume; each of these is a single point one architecture believes the aircraft
+  occupies. They are billboarded reticles now, which is what every navigation
+  display uses and which stops them hiding the aircraft — the one object in the
+  scene whose size means anything.
+- **A fresh `Intl.NumberFormat` was constructed for every number on screen**,
+  which a CPU profile put among the top JavaScript costs of the Live Lab. Cached
+  per digit count.
 - **The aircraft was drawn on a mirrored heading, and banked out of its turns.**
   `rotation.y = -yaw + PI/2` produces a nose vector of (sin ψ, 0, −cos ψ), which
   is the heading reflected about north: on a runway at 140° the aircraft was

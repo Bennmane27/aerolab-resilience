@@ -48,18 +48,30 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import {
+  makeBelowGroundReticle,
   makeBlobShadow,
+  makeReticle,
   makeRunwayTexture,
   screenSizedWorld,
   unitViewHeight,
 } from "./scene/assets";
 import { buildAirliner } from "./scene/aircraft";
-import { attitudeFromEuler } from "./scene/attitude";
+import { PoseInterpolator, toWorld, type PoseSample } from "./scene/interpolate";
 
 export type CameraMode = "chase" | "map" | "runway" | "free";
 
 interface Props {
-  frame: Frame | null;
+  /**
+   * The live pose, read once per rendered frame from inside the animation loop.
+   *
+   * The scene deliberately does NOT follow a React prop for this. Publishing
+   * the frame through state re-rendered the whole interface on every step of
+   * the run; measured at 71 ms per frame, which is 14.5 fps and about five
+   * metres of aircraft movement between two images.
+   */
+  liveFrame: React.RefObject<Frame | null>;
+  /** Non-null only while the transport slider is being dragged; it wins. */
+  scrubFrame: Frame | null;
   scenario: ScenarioInfo | null;
   visibleEstimators: string[];
   cameraMode: CameraMode;
@@ -67,6 +79,8 @@ interface Props {
   labels: Record<string, string>;
   /** Changes on every restart; resets the trails without guessing from t. */
   runKey: number;
+  /** Transport speed, used to pace the render clock between samples. */
+  speed: number;
 }
 
 /**
@@ -94,10 +108,6 @@ const MARKER_SCREEN_FRACTION = 0.017;
 /** Radius the marker geometry is authored at, before the screen-size scaling. */
 const MARKER_BASE_RADIUS_M = 5;
 
-// NED -> three.js world: x = East, y = altitude (up), z = North.
-function toWorld(n: number, e: number, d: number): THREE.Vector3 {
-  return new THREE.Vector3(e, -d, n);
-}
 
 interface TrailHandle {
   line: THREE.Line;
@@ -148,17 +158,7 @@ function disposeTree(root: THREE.Object3D) {
   });
 }
 
-export function Scene3D({
-  frame,
-  scenario,
-  visibleEstimators,
-  cameraMode,
-  follow,
-  labels,
-  runKey,
-}: Props) {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef<{
+interface SceneState {
     renderer: THREE.WebGLRenderer;
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
@@ -174,12 +174,119 @@ export function Scene3D({
     ground: THREE.Mesh;
     dispose: () => void;
     lastTruth: THREE.Vector3;
-  } | null>(null);
+  interpolator: PoseInterpolator;
+}
+
+/**
+ * Applies one simulation frame to the scene.
+ *
+ * Called from the render loop, NOT from a React effect. Driving this from a
+ * prop meant the aircraft only moved when the interface re-rendered, and
+ * re-rendering the interface at display rate is what made it slow in the
+ * first place - 71 ms per frame, 14.5 fps, five metres of movement between
+ * two images. The scene now advances on its own clock and the panels on
+ * theirs.
+ */
+function applyFrame(
+  s: SceneState,
+  frame: Frame,
+  pose: PoseSample,
+  visibleEstimators: string[]
+) {
+  const truthPos = pose.truth;
+  s.lastTruth.copy(truthPos);
+  pushTrail(s.truthTrail, truthPos, true);
+
+  s.truthAircraft.position.copy(truthPos);
+  s.truthAircraft.quaternion.copy(pose.attitude);
+
+  // Ground shadow: it spreads and fades with height, which reads as altitude
+  // even in the top-down view where height is otherwise invisible.
+  const altitude = Math.max(0, truthPos.y);
+  const spread = 70 + altitude * 0.35;
+  s.truthShadow.position.set(truthPos.x, 1.2, truthPos.z);
+  s.truthShadow.scale.set(spread, spread, 1);
+  (s.truthShadow.material as THREE.MeshBasicMaterial).opacity = Math.max(
+    0.05,
+    0.85 - altitude / 900
+  );
+
+  for (const [id, trail] of s.estimatorTrails) {
+    const marker = s.estimatorMarkers.get(id);
+    const errorLine = s.errorLines.get(id);
+    const dropLine = s.dropLines.get(id);
+    const solution = frame.solutions[id];
+    const visible = visibleEstimators.includes(id) && solution !== undefined;
+
+    trail.line.visible = visible;
+    if (marker) marker.visible = visible;
+    if (errorLine) errorLine.visible = visible;
+    if (dropLine) dropLine.visible = visible;
+    if (!visible || !solution) continue;
+
+    const p = pose.solutions.get(id) ?? toWorld(solution.n, solution.e, solution.d);
+    pushTrail(trail, p, false);
+    marker?.position.copy(p);
+
+    // Below the ground plane: swap the lit bead for a hollow ring, which
+    // reads as "this is not a place an aircraft can be".
+    const belowGround = p.y < 0;
+    if (marker) {
+      const solid = marker.getObjectByName("solid");
+      const hollow = marker.getObjectByName("hollow");
+      if (solid) solid.visible = !belowGround;
+      if (hollow) hollow.visible = belowGround;
+    }
+
+    if (errorLine) {
+      errorLine.material.depthTest = !belowGround;
+      errorLine.renderOrder = belowGround ? 28 : 5;
+      errorLine.geometry.setPositions([
+        truthPos.x, truthPos.y, truthPos.z,
+        p.x, p.y, p.z,
+      ]);
+      errorLine.geometry.computeBoundingSphere();
+    }
+
+    if (dropLine) {
+      const attr = dropLine.geometry.attributes.position as THREE.BufferAttribute;
+      attr.setXYZ(0, p.x, p.y, p.z);
+      attr.setXYZ(1, p.x, 0, p.z);
+      attr.needsUpdate = true;
+      dropLine.computeLineDistances();
+      const dropMaterial = dropLine.material as THREE.LineDashedMaterial;
+      dropMaterial.opacity = belowGround ? 0.95 : 0.4;
+      dropMaterial.depthTest = !belowGround;
+      dropLine.renderOrder = belowGround ? 29 : 0;
+    }
+  }
+}
+export function Scene3D({
+  liveFrame,
+  speed,
+  scrubFrame,
+  scenario,
+  visibleEstimators,
+  cameraMode,
+  follow,
+  labels,
+  runKey,
+}: Props) {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const stateRef = useRef<SceneState | null>(null);
 
   // Values the animation loop needs but that must not tear the scene down when
   // they change.
-  const propsRef = useRef({ frame, visibleEstimators, cameraMode, follow, labels });
-  propsRef.current = { frame, visibleEstimators, cameraMode, follow, labels };
+  const propsRef = useRef({
+    liveFrame,
+    scrubFrame,
+    speed,
+    visibleEstimators,
+    cameraMode,
+    follow,
+    labels,
+  });
+  propsRef.current = { liveFrame, scrubFrame, speed, visibleEstimators, cameraMode, follow, labels };
 
   // ---------------------------------------------------------------- setup ---
   useEffect(() => {
@@ -311,41 +418,13 @@ export function Scene3D({
 
       estimatorTrails.set(id, makeTrail(scene, new THREE.LineBasicMaterial({ color })));
 
-      // Marker: a lit sphere in a halo above ground, a hollow ring below it.
+      // Marker: a flat reticle, not a ball. See makeReticle for why.
       const marker = new THREE.Group();
-      const solid = new THREE.Group();
+      const solid = makeReticle(colorHex);
       solid.name = "solid";
-      // Translucent: an opaque bead sitting on the aircraft hides the thing
-      // the error is being measured against.
-      const bead = new THREE.Mesh(
-        new THREE.SphereGeometry(MARKER_BASE_RADIUS_M, 20, 14),
-        new THREE.MeshStandardMaterial({
-          color,
-          emissive: color,
-          emissiveIntensity: 0.45,
-          roughness: 0.4,
-          transparent: true,
-          opacity: 0.82,
-        })
-      );
-      solid.add(bead);
-      const halo = new THREE.Mesh(
-        new THREE.RingGeometry(8.2, 9.1, 36),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.42, side: THREE.DoubleSide })
-      );
-      halo.name = "halo";
-      solid.add(halo);
       marker.add(solid);
-
-      // Drawn through the ground: this is the "the estimate is underground"
-      // signal, and it has to be visible from above the surface.
-      const hollow = new THREE.Mesh(
-        new THREE.TorusGeometry(11, 2.2, 8, 28),
-        new THREE.MeshBasicMaterial({ color, depthTest: false })
-      );
-      hollow.renderOrder = 30;
+      const hollow = makeBelowGroundReticle(colorHex);
       hollow.name = "hollow";
-      hollow.rotation.x = Math.PI / 2;
       hollow.visible = false;
       marker.add(hollow);
       scene.add(marker);
@@ -418,9 +497,27 @@ export function Scene3D({
     };
 
     let raf = 0;
+    let previousNow = 0;
     const animate = () => {
+      const now = performance.now();
+      const dtWall = previousNow ? Math.min((now - previousNow) / 1000, 0.25) : 0;
+      previousNow = now;
       const s = stateRef.current;
       if (s) {
+        // The scene advances here, once per rendered image, so the aircraft
+        // moves as smoothly as the display allows rather than as often as
+        // React happens to re-render.
+        const p = propsRef.current;
+        const showing = p.scrubFrame ?? p.liveFrame.current;
+        if (showing) {
+          s.interpolator.push(showing);
+          // Scrubbing is a discrete choice of instant, so it is drawn exactly;
+          // a live run is paced across the two samples that bracket now.
+          const pose = p.scrubFrame
+            ? s.interpolator.advance(0, 0)
+            : s.interpolator.advance(dtWall, p.speed);
+          if (pose) applyFrame(s, showing, pose, p.visibleEstimators);
+        }
         applyCamera(s);
         s.controls.update();
         // Markers hold a constant size on screen, like a map pin. A marker's
@@ -434,8 +531,6 @@ export function Scene3D({
           const distance = s.camera.position.distanceTo(marker.position);
           const world = screenSizedWorld(distance, unitHeight, MARKER_SCREEN_FRACTION, 2, 260);
           marker.scale.setScalar(world / MARKER_BASE_RADIUS_M);
-          const halo = marker.getObjectByName("halo");
-          if (halo) halo.quaternion.copy(s.camera.quaternion);
         }
         s.renderer.render(s.scene, s.camera);
       }
@@ -458,6 +553,7 @@ export function Scene3D({
       errorMaterials,
       ground,
       lastTruth: new THREE.Vector3(),
+      interpolator: new PoseInterpolator(),
       dispose: () => {
         cancelAnimationFrame(raf);
         observer.disconnect();
@@ -671,85 +767,11 @@ export function Scene3D({
   useEffect(() => {
     const s = stateRef.current;
     if (!s) return;
+    s.interpolator.reset();
     resetTrail(s.truthTrail);
     for (const trail of s.estimatorTrails.values()) resetTrail(trail);
   }, [runKey]);
 
-  // ----------------------------------------------------------- per frame ----
-  useEffect(() => {
-    const s = stateRef.current;
-    if (!s || !frame) return;
-
-    const truthPos = toWorld(frame.truth.n, frame.truth.e, frame.truth.d);
-    s.lastTruth.copy(truthPos);
-    pushTrail(s.truthTrail, truthPos, true);
-
-    s.truthAircraft.position.copy(truthPos);
-    s.truthAircraft.quaternion.setFromRotationMatrix(
-      attitudeFromEuler(frame.truth.yaw_deg, frame.truth.pitch_deg, frame.truth.roll_deg)
-    );
-
-    // Ground shadow: it spreads and fades with height, which reads as altitude
-    // even in the top-down view where height is otherwise invisible.
-    const altitude = Math.max(0, truthPos.y);
-    const spread = 70 + altitude * 0.35;
-    s.truthShadow.position.set(truthPos.x, 1.2, truthPos.z);
-    s.truthShadow.scale.set(spread, spread, 1);
-    (s.truthShadow.material as THREE.MeshBasicMaterial).opacity = Math.max(
-      0.05,
-      0.85 - altitude / 900
-    );
-
-    for (const [id, trail] of s.estimatorTrails) {
-      const marker = s.estimatorMarkers.get(id);
-      const errorLine = s.errorLines.get(id);
-      const dropLine = s.dropLines.get(id);
-      const solution = frame.solutions[id];
-      const visible = visibleEstimators.includes(id) && solution !== undefined;
-
-      trail.line.visible = visible;
-      if (marker) marker.visible = visible;
-      if (errorLine) errorLine.visible = visible;
-      if (dropLine) dropLine.visible = visible;
-      if (!visible || !solution) continue;
-
-      const p = toWorld(solution.n, solution.e, solution.d);
-      pushTrail(trail, p, false);
-      marker?.position.copy(p);
-
-      // Below the ground plane: swap the lit bead for a hollow ring, which
-      // reads as "this is not a place an aircraft can be".
-      const belowGround = p.y < 0;
-      if (marker) {
-        const solid = marker.getObjectByName("solid");
-        const hollow = marker.getObjectByName("hollow");
-        if (solid) solid.visible = !belowGround;
-        if (hollow) hollow.visible = belowGround;
-      }
-
-      if (errorLine) {
-        errorLine.material.depthTest = !belowGround;
-        errorLine.renderOrder = belowGround ? 28 : 5;
-        errorLine.geometry.setPositions([
-          truthPos.x, truthPos.y, truthPos.z,
-          p.x, p.y, p.z,
-        ]);
-        errorLine.geometry.computeBoundingSphere();
-      }
-
-      if (dropLine) {
-        const attr = dropLine.geometry.attributes.position as THREE.BufferAttribute;
-        attr.setXYZ(0, p.x, p.y, p.z);
-        attr.setXYZ(1, p.x, 0, p.z);
-        attr.needsUpdate = true;
-        dropLine.computeLineDistances();
-        const dropMaterial = dropLine.material as THREE.LineDashedMaterial;
-        dropMaterial.opacity = belowGround ? 0.95 : 0.4;
-        dropMaterial.depthTest = !belowGround;
-        dropLine.renderOrder = belowGround ? 29 : 0;
-      }
-    }
-  }, [frame, visibleEstimators, labels]);
 
   return (
     <div

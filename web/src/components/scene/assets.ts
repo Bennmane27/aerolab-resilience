@@ -175,3 +175,86 @@ export function screenSizedWorld(
   return Math.min(max, Math.max(min, distance * unitHeight * fraction));
 }
 
+/**
+ * Billboarded reticle for one estimated position.
+ *
+ * A sphere was the wrong symbol. A sphere is an OBJECT with a size and a
+ * volume, and these are none of those things: each one is a single point that
+ * one architecture believes the aircraft occupies. Every navigation display in
+ * existence draws that as a flat mark - a ring, a cross, a diamond - because a
+ * mark reads as a coordinate and a ball reads as a thing. The balls also hid
+ * the aircraft, which is the one object in the scene whose size means anything.
+ *
+ * Drawn on a canvas so the ring stays one pixel wide at every distance, and
+ * kept facing the camera by the render loop.
+ */
+export function makeReticle(color: string, size = 128): THREE.Sprite {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const c = size / 2;
+    const r = size * 0.30;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = size * 0.035;
+    ctx.lineCap = "butt";
+
+    // Outer ring, left open at the four ticks so the mark reads as a reticle
+    // rather than as a filled disc.
+    for (let k = 0; k < 4; ++k) {
+      const a0 = k * (Math.PI / 2) + 0.26;
+      ctx.beginPath();
+      ctx.arc(c, c, r, a0, a0 + Math.PI / 2 - 0.52);
+      ctx.stroke();
+    }
+    // Ticks into the gaps.
+    for (let k = 0; k < 4; ++k) {
+      const a = k * (Math.PI / 2);
+      ctx.beginPath();
+      ctx.moveTo(c + Math.cos(a) * r * 0.62, c + Math.sin(a) * r * 0.62);
+      ctx.lineTo(c + Math.cos(a) * r * 1.28, c + Math.sin(a) * r * 1.28);
+      ctx.stroke();
+    }
+    // Centre dot: the point itself.
+    ctx.beginPath();
+    ctx.arc(c, c, size * 0.055, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+  );
+  return sprite;
+}
+
+/** The same mark, hollow and doubled, for an estimate below the ground. */
+export function makeBelowGroundReticle(color: string, size = 128): THREE.Sprite {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const c = size / 2;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * 0.05;
+    for (const r of [size * 0.30, size * 0.19]) {
+      ctx.beginPath();
+      ctx.arc(c, c, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Downward chevron: the estimate is under the surface.
+    ctx.beginPath();
+    ctx.moveTo(c - size * 0.11, c - size * 0.05);
+    ctx.lineTo(c, c + size * 0.08);
+    ctx.lineTo(c + size * 0.11, c - size * 0.05);
+    ctx.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false })
+  );
+  sprite.renderOrder = 30;
+  return sprite;
+}
