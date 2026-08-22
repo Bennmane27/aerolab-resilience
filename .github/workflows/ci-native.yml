@@ -74,27 +74,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build cmake lcov
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+      - run: pipx install gcovr
+      # A clean tree: a stale .gcno beside a rebuilt source is one of the ways
+      # this measurement goes wrong without saying so.
+      - run: rm -rf build/coverage
       - run: cmake --preset coverage && cmake --build build/coverage -j
       - run: ctest --preset coverage --output-on-failure
-      - name: Collect
+      # VNV-008: >= 90 % lines over core/.
+      #
+      # gcovr rather than lcov, and the gcov binary pinned to the compiler that
+      # produced the notes. The previous lcov invocation reported 87.6 % from
+      # --summary and 10.9 % from --list on the SAME tracefile, with 0 %
+      # function coverage in every file and one file at 117 % lines - all of it
+      # masked by `--ignore-errors mismatch,gcov,source`, which suppressed
+      # exactly the errors that would have named the problem. A gate whose
+      # number cannot be reproduced by a second reading of its own output is
+      # not a gate, so the measurement was replaced rather than the threshold.
+      - name: Measure and enforce the line coverage floor
         run: |
-          lcov --directory build/coverage --capture --output-file coverage.info \
-               --ignore-errors mismatch,gcov,source
-          lcov --remove coverage.info "/usr/*" "*/tests/*" "*/_deps/*" "*/apps/*" \
-               --output-file coverage.core.info --ignore-errors unused
-          lcov --list coverage.core.info | tee coverage-summary.txt
-      # AT-011 target: >= 90 % lines over core/.
-      - name: Enforce the line coverage floor
-        run: |
-          pct=$(lcov --summary coverage.core.info 2>&1 | grep -oP "lines\.+: \K[0-9.]+")
-          echo "core line coverage: ${pct}%"
-          awk -v p="$pct" "BEGIN { exit (p+0 >= 90.0) ? 0 : 1 }" \
-            || { echo "::error::core line coverage ${pct}% is below the 90% floor of VNV-008"; exit 1; }
+          gcov_bin="gcov-$(gcc -dumpversion | cut -d. -f1)"
+          command -v "$gcov_bin" >/dev/null || gcov_bin=gcov
+          echo "gcc $(gcc -dumpversion), reading notes with $gcov_bin"
+          gcovr --root .                 --gcov-executable "$gcov_bin"                 --filter 'core/'                 --exclude '.*/_deps/.*'                 --print-summary                 --txt coverage-summary.txt                 --cobertura coverage.xml                 --fail-under-line 90.0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: coverage
           path: |
-            coverage.core.info
+            coverage.xml
             coverage-summary.txt
