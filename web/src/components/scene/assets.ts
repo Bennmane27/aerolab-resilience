@@ -188,38 +188,39 @@ export function screenSizedWorld(
  * Drawn on a canvas so the ring stays one pixel wide at every distance, and
  * kept facing the camera by the render loop.
  */
-export function makeReticle(color: string, size = 128): THREE.Sprite {
+export function makeReticle(color: string, size = 192): THREE.Sprite {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
   if (ctx) {
     const c = size / 2;
-    const r = size * 0.30;
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = size * 0.035;
-    ctx.lineCap = "butt";
-
-    // Outer ring, left open at the four ticks so the mark reads as a reticle
-    // rather than as a filled disc.
-    for (let k = 0; k < 4; ++k) {
-      const a0 = k * (Math.PI / 2) + 0.26;
+    const r = size * 0.36;
+    // A dark pass under everything: the mark has to hold against a bright sky
+    // as well as against dark terrain.
+    const draw = (stroke: string, width: number, fill: string, dot: number) => {
+      ctx.strokeStyle = stroke;
+      ctx.fillStyle = fill;
+      ctx.lineWidth = width;
+      ctx.lineCap = "butt";
+      for (let k = 0; k < 4; ++k) {
+        const a0 = k * (Math.PI / 2) + 0.3;
+        ctx.beginPath();
+        ctx.arc(c, c, r, a0, a0 + Math.PI / 2 - 0.6);
+        ctx.stroke();
+      }
+      for (let k = 0; k < 4; ++k) {
+        const a = k * (Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(c + Math.cos(a) * r * 0.5, c + Math.sin(a) * r * 0.5);
+        ctx.lineTo(c + Math.cos(a) * r * 1.3, c + Math.sin(a) * r * 1.3);
+        ctx.stroke();
+      }
       ctx.beginPath();
-      ctx.arc(c, c, r, a0, a0 + Math.PI / 2 - 0.52);
-      ctx.stroke();
-    }
-    // Ticks into the gaps.
-    for (let k = 0; k < 4; ++k) {
-      const a = k * (Math.PI / 2);
-      ctx.beginPath();
-      ctx.moveTo(c + Math.cos(a) * r * 0.62, c + Math.sin(a) * r * 0.62);
-      ctx.lineTo(c + Math.cos(a) * r * 1.28, c + Math.sin(a) * r * 1.28);
-      ctx.stroke();
-    }
-    // Centre dot: the point itself.
-    ctx.beginPath();
-    ctx.arc(c, c, size * 0.055, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.arc(c, c, dot, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    draw("rgba(0,0,0,0.65)", size * 0.105, "rgba(0,0,0,0.65)", size * 0.085);
+    draw(color, size * 0.062, color, size * 0.055);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -230,25 +231,28 @@ export function makeReticle(color: string, size = 128): THREE.Sprite {
 }
 
 /** The same mark, hollow and doubled, for an estimate below the ground. */
-export function makeBelowGroundReticle(color: string, size = 128): THREE.Sprite {
+export function makeBelowGroundReticle(color: string, size = 192): THREE.Sprite {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
   if (ctx) {
     const c = size / 2;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = size * 0.05;
-    for (const r of [size * 0.30, size * 0.19]) {
+    const pass = (stroke: string, width: number) => {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = width;
+      for (const r of [size * 0.36, size * 0.22]) {
+        ctx.beginPath();
+        ctx.arc(c, c, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.beginPath();
-      ctx.arc(c, c, r, 0, Math.PI * 2);
+      ctx.moveTo(c - size * 0.12, c - size * 0.06);
+      ctx.lineTo(c, c + size * 0.09);
+      ctx.lineTo(c + size * 0.12, c - size * 0.06);
       ctx.stroke();
-    }
-    // Downward chevron: the estimate is under the surface.
-    ctx.beginPath();
-    ctx.moveTo(c - size * 0.11, c - size * 0.05);
-    ctx.lineTo(c, c + size * 0.08);
-    ctx.lineTo(c + size * 0.11, c - size * 0.05);
-    ctx.stroke();
+    };
+    pass("rgba(0,0,0,0.65)", size * 0.105);
+    pass(color, size * 0.06);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;

@@ -243,6 +243,8 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .viewport-hint {
   bottom: 9px; left: 9px; padding: 4px 9px; font-size: 10.5px; color: var(--text-faint);
 }
+/* The readout sits above the legend on the right, so the below-ground note in
+   the commentary is the only thing left in that corner. */
 
 .viewport-warning {
   /* Clears the full-screen button, which owns the bottom-right corner. */
@@ -420,13 +422,15 @@ tr.highlight td { background: rgba(77, 155, 224, 0.08); }
 
 /* Replaces the labels that used to float beside each marker in the 3D scene.
    Fixed corner, fixed order, no overlap, ever. */
+/* Bottom RIGHT: the commentary owns the left side of the view now. */
 .viewport-legend {
   position: absolute;
-  left: 9px;
-  bottom: 42px;
+  right: 9px;
+  bottom: 44px;
   z-index: 2;
   padding: 7px 10px 6px;
-  background: rgba(8, 11, 16, 0.9);
+  background: rgba(11, 16, 23, 0.72);
+  backdrop-filter: blur(6px);
   border: 1px solid var(--line);
   border-radius: 4px;
   font-family: var(--mono);
@@ -552,35 +556,54 @@ tr.highlight td { background: rgba(77, 155, 224, 0.08); }
 
 /* ------------------------------------------------------------- narrator -- */
 
-/* On the view, not beside it: this is the reading of what the 3D shows.
-   Anchored right so the aircraft, which the camera keeps centred, stays clear;
-   the legend has the opposite corner. Bounded height with its own scroll, so
-   the history is reachable without the panel ever growing over the scene. */
+/* On the LEFT of the view, under the truth badge. The camera keeps the aircraft
+   centred and the legend has the opposite corner, so this side stays clear.
+   Resizable natively from its bottom-right grip, and collapsible to its header:
+   how much of the scene it is allowed to cover is the reader's call, not a
+   number picked here. */
 .narrator {
   position: absolute;
   top: 118px;
-  right: 9px;
-  bottom: 44px;
+  left: 9px;
   z-index: 2;
-  width: 384px;
-  max-width: 42%;
+  width: 372px;
+  height: 46%;
+  min-width: 250px;
+  min-height: 122px;
+  max-width: 58%;
+  max-height: calc(100% - 172px);
+  resize: both;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* Translucent enough to keep the scene readable behind it, opaque enough to
-     read against a bright sky or a dark runway without either winning. */
-  background: rgba(9, 13, 19, 0.9);
-  backdrop-filter: blur(3px);
-  border: 1px solid var(--line);
+  /* Light enough to keep the runway and the trails readable through it. It was
+     opaque before and the panel sat on the scene like a hole. */
+  background: rgba(11, 16, 23, 0.66);
+  backdrop-filter: blur(7px) saturate(120%);
+  border: 1px solid rgba(90, 118, 152, 0.42);
   border-radius: 5px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   font-size: 12px;
 }
-.narrator-head {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
-  padding: 7px 10px 5px;
-  border-bottom: 1px solid var(--line-soft);
+/* Collapsed: the header only, and nothing is resizable while there is nothing
+   to resize. */
+.narrator.is-collapsed {
+  height: auto;
+  min-height: 0;
+  resize: none;
 }
-.narrator-head h4 {
-  margin: 0;
+.narrator.is-collapsed .narrator-objective,
+.narrator.is-collapsed .narrator-list { display: none; }
+
+.narrator-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 3px 8px 3px 4px;
+  border-bottom: 1px solid rgba(90, 118, 152, 0.26);
+  flex: 0 0 auto;
+}
+.narrator-toggle {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: 0; padding: 4px 6px;
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 600;
@@ -588,15 +611,22 @@ tr.highlight td { background: rgba(77, 155, 224, 0.08); }
   text-transform: uppercase;
   color: var(--text-dim);
 }
+.narrator-toggle:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+.narrator-toggle span { color: var(--accent); font-size: 9px; }
 .narrator-hint { font-size: 10px; color: var(--warn); font-family: var(--mono); }
+.narrator-count {
+  font-family: var(--mono); font-size: 10px; color: var(--text-faint);
+  padding: 1px 6px; border: 1px solid var(--line); border-radius: 9px;
+}
 
 .narrator-objective {
   margin: 0;
   padding: 6px 10px 7px;
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid rgba(90, 118, 152, 0.26);
   color: var(--text-faint);
   font-size: 11px;
   line-height: 1.4;
+  flex: 0 0 auto;
 }
 .narrator-objective b {
   color: var(--text-dim); font-family: var(--mono);
@@ -608,35 +638,36 @@ tr.highlight td { background: rgba(77, 155, 224, 0.08); }
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 4px 4px 4px 0;
-  scrollbar-width: thin; scrollbar-color: #33445c transparent;
+  padding: 2px 4px 14px 0;
+  scrollbar-width: thin; scrollbar-color: #46607f transparent;
 }
 .narrator-list::-webkit-scrollbar { width: 9px; }
-.narrator-list::-webkit-scrollbar-thumb { background: #33445c; border-radius: 5px; }
+.narrator-list::-webkit-scrollbar-thumb { background: #46607f; border-radius: 5px; }
 .narrator-list::-webkit-scrollbar-track { background: transparent; }
 
 .narrator-entry {
-  position: relative;
   padding: 8px 10px 9px 12px;
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid rgba(90, 118, 152, 0.2);
   border-left: 2px solid transparent;
 }
-.narrator-entry:last-child { border-bottom: 0; }
-.narrator-entry-head {
-  display: flex; align-items: baseline; gap: 7px; margin-bottom: 3px;
-}
+.narrator-entry:last-child { border-bottom: 0; border-left-width: 4px; }
+.narrator-entry-head { display: flex; align-items: baseline; gap: 7px; margin-bottom: 3px; }
 .narrator-entry-head b { color: var(--text); font-weight: 600; }
 .narrator-t {
   flex: 0 0 auto;
   font-family: var(--mono); font-size: 10.5px; color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
+/* A touch of shadow: the text sits over a moving scene, and a light sky behind
+   the panel would otherwise thin it out. */
 .narrator-entry p {
   margin: 0;
-  color: var(--text-dim);
+  color: #b9c8d9;
   line-height: 1.5;
   font-size: 11.5px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
+.narrator-entry-head b, .narrator-t { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55); }
 
 /* Tone is an accent on the rule, never the only signal: every entry states its
    situation in words (UI-018). */
@@ -645,12 +676,11 @@ tr.highlight td { background: rgba(77, 155, 224, 0.08); }
 .narrator-entry.tone-acting { border-left-color: var(--warn); }
 .narrator-entry.tone-done { border-left-color: var(--accent); }
 .narrator-entry.tone-idle { border-left-color: var(--line); }
-
-/* The newest entry, marked so the eye finds it after scrolling back. The rule
-   already carries the tone; this only makes it wider and lifts the ground. */
-.narrator-entry:last-child { border-left-width: 4px; background: rgba(255, 255, 255, 0.028); }
 .narrator-latest { display: none; }
 
 @media (max-width: 1180px) {
-  .narrator { position: static; width: auto; max-width: none; margin: 10px 0 0; max-height: 340px; }
+  .narrator {
+    position: static; width: auto; height: auto; max-width: none;
+    max-height: 340px; margin: 10px 0 0; resize: vertical;
+  }
 }

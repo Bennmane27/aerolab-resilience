@@ -24,6 +24,9 @@ export interface Narration {
   objectiveLabel: string;
   watchLabel: string;
   historyHint: string;
+  collapse: string;
+  expand: string;
+  resizeHint: string;
   empty: string;
 
   /** Opening entry, before anything is injected. */
@@ -51,6 +54,9 @@ const en: Narration = {
   objectiveLabel: "This scenario",
   watchLabel: "Watch",
   historyHint: "scroll for the earlier entries",
+  collapse: "Collapse",
+  expand: "Expand",
+  resizeHint: "drag the corner to resize",
   empty: "Waiting for the first measurements.",
 
   opening: (fault, target, seconds) => ({
@@ -158,6 +164,9 @@ const fr: Narration = {
   objectiveLabel: "Ce scénario",
   watchLabel: "À surveiller",
   historyHint: "faites défiler pour les entrées précédentes",
+  collapse: "Réduire",
+  expand: "Agrandir",
+  resizeHint: "tirez le coin pour redimensionner",
   empty: "En attente des premières mesures.",
 
   opening: (fault, target, seconds) => ({

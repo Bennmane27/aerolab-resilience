@@ -177,6 +177,7 @@ export function Narrator({
   const entries = buildEntries(frame, scenario, log, labels, narration, t, num, finished);
 
   const listRef = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
   // Follow the newest entry, but only while the reader is already at the
   // bottom. Scrolling up to read what happened is the whole point of keeping a
   // history, and yanking the view back would defeat it.
@@ -195,10 +196,25 @@ export function Narrator({
   const objective = scenarioText(scenario.id)?.objective ?? scenario.objective;
 
   return (
-    <section className="narrator" aria-label={narration.title}>
+    <section
+      className={collapsed ? "narrator is-collapsed" : "narrator"}
+      aria-label={narration.title}
+    >
       <header className="narrator-head">
-        <h4>{narration.title}</h4>
-        {!pinned && <span className="narrator-hint">{narration.historyHint}</span>}
+        <button
+          type="button"
+          className="narrator-toggle"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-expanded={!collapsed}
+          title={collapsed ? narration.expand : narration.collapse}
+        >
+          <span aria-hidden="true">{collapsed ? "▸" : "▾"}</span>
+          {narration.title}
+        </button>
+        {!collapsed && !pinned && (
+          <span className="narrator-hint">{narration.historyHint}</span>
+        )}
+        {collapsed && <span className="narrator-count">{entries.length}</span>}
       </header>
       <p className="narrator-objective">
         <b>{narration.objectiveLabel}</b> — {objective}

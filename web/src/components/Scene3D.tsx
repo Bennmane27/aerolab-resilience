@@ -104,9 +104,7 @@ const MAX_TRAIL_POINTS = 6000;
 const MIN_TRAIL_STEP_M = 0.4;
 
 /** Estimator markers are drawn at this share of the viewport height. */
-const MARKER_SCREEN_FRACTION = 0.017;
-/** Radius the marker geometry is authored at, before the screen-size scaling. */
-const MARKER_BASE_RADIUS_M = 5;
+const MARKER_SCREEN_FRACTION = 0.046;
 
 
 interface TrailHandle {
@@ -392,7 +390,7 @@ export function Scene3D({
     scene.add(grid);
 
     // Truth aircraft, its ground shadow and its dashed trail.
-    const truthAircraft = buildAirliner(0xf2f6fb);
+    const truthAircraft = buildAirliner();
     scene.add(truthAircraft);
     const truthShadow = makeBlobShadow();
     scene.add(truthShadow);
@@ -529,8 +527,13 @@ export function Scene3D({
         for (const marker of s.estimatorMarkers.values()) {
           if (!marker.visible) continue;
           const distance = s.camera.position.distanceTo(marker.position);
-          const world = screenSizedWorld(distance, unitHeight, MARKER_SCREEN_FRACTION, 2, 260);
-          marker.scale.setScalar(world / MARKER_BASE_RADIUS_M);
+          // Scaled DIRECTLY to the wanted world size: a sprite is one unit
+          // across, where the sphere it replaced had a radius of five. Dividing
+          // by that old radius shrank the reticle to a couple of pixels, which
+          // is why the marks vanished and only the trails were left.
+          marker.scale.setScalar(
+            screenSizedWorld(distance, unitHeight, MARKER_SCREEN_FRACTION, 3, 400)
+          );
         }
         s.renderer.render(s.scene, s.camera);
       }
