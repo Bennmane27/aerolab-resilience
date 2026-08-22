@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: "AEROLAB RESILIENCE: Navigation Integrity and Resilience Validation Platform"
+message: >-
+  If you use this software or its results, please cite it. Note that it is a
+  simulation-only research demonstrator and makes no claim of conformance to any
+  aviation standard.
+type: software
+license: MIT
+version: 1.0.0
+date-released: "2026-08-21"
+abstract: >-
+  A deterministic simulation test bench for evaluating the integrity and
+  resilience of multi-sensor aircraft navigation architectures. It generates a
+  closed-form trajectory, models GNSS, inertial, barometric and runway-relative
+  vision sensors with explicit noise, bias and latency, injects thirteen families
+  of synthetic fault into the measurements only, and compares five navigation
+  architectures on the identical measurement stream. Its principal result is a
+  measured detectability floor: the drift rate below which each integrity policy
+  stops noticing that a source is lying.
+keywords:
+  - navigation integrity
+  - sensor fusion
+  - error-state Kalman filter
+  - fault detection and exclusion
+  - solution separation
+  - GNSS resilience
+  - Monte Carlo benchmarking
+  - simulation

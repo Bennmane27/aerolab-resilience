@@ -1,0 +1,266 @@
+/* AEROLAB RESILIENCE - Web Lab.
+ *
+ * Section 4.3: flight-test / mission-control, dark and highly legible, with no
+ * imitation of any manufacturer's cockpit. UI-018: colour is never the only
+ * carrier of meaning - every state also has a glyph and a word. UI-019: every
+ * value carries its unit. UI-020: usable at 1366x768.
+ */
+
+:root {
+  --bg: #0b0f14;
+  --bg-panel: #121820;
+  --bg-panel-2: #172029;
+  --line: #253243;
+  --line-soft: #1c2735;
+  --text: #dde6f0;
+  --text-dim: #8a9bb0;
+  --text-faint: #61738a;
+
+  --truth: #ffffff;
+  --accent: #4d9be0;
+  --ok: #3fbf8f;
+  --warn: #e8c95a;
+  --bad: #e0663d;
+  --isolated: #cf5b7f;
+  --gone: #5b6b80;
+
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #1f2a36; border-color: #3a4d66; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary { background: #1d4f7c; border-color: #2f6ea8; }
+button.primary:hover:not(:disabled) { background: #24608f; }
+button.active { background: #1d4f7c; border-color: #2f6ea8; }
+
+select, input {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------------------------------------------------------------- shell -- */
+
+.app { display: flex; flex-direction: column; height: 100%; }
+
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 16px; height: 52px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.brand { font-family: var(--mono); font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; }
+.brand span { color: var(--accent); }
+.tagline { color: var(--text-faint); font-size: 12px; white-space: nowrap; }
+
+.nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.nav button { padding: 5px 10px; font-size: 13px; }
+
+.disclaimer {
+  padding: 6px 16px;
+  background: #2a1f10;
+  border-bottom: 1px solid #4a3818;
+  color: #e6c98a;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.content { flex: 1 1 auto; overflow: auto; }
+.pad { padding: 20px; max-width: 1180px; margin: 0 auto; }
+
+/* ---------------------------------------------------------------- panels -- */
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.panel > h3 {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: var(--bg-panel-2);
+  border-bottom: 1px solid var(--line);
+}
+.panel-body { padding: 12px; }
+
+.grid { display: grid; gap: 12px; }
+
+/* ------------------------------------------------------------- live lab -- */
+
+.lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-rows: minmax(320px, 1fr) auto;
+  gap: 12px;
+  padding: 12px;
+  height: 100%;
+  min-height: 0;
+}
+.lab .viewport { grid-row: 1 / 2; min-height: 0; position: relative; }
+.lab .side { grid-row: 1 / 3; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
+.lab .strip { grid-column: 1 / 2; }
+
+@media (max-width: 1100px) {
+  .lab { grid-template-columns: minmax(0, 1fr); grid-template-rows: 340px auto auto; }
+  .lab .side { grid-row: auto; }
+  .lab .strip { grid-column: auto; }
+}
+
+.viewport canvas { display: block; width: 100%; height: 100%; }
+
+.truth-badge {
+  position: absolute; top: 10px; left: 10px;
+  background: rgba(11, 15, 20, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px 9px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  max-width: 320px;
+}
+.truth-badge b { color: var(--truth); }
+
+.transport { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.transport .clock { font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+
+/* -------------------------------------------------------------- sensors -- */
+
+.sensor-row {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sensor-row:last-child { border-bottom: none; }
+.sensor-name { font-family: var(--mono); font-size: 13px; }
+.sensor-state { font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em; }
+.sensor-meta { grid-column: 2 / 4; color: var(--text-faint); font-size: 11px; font-family: var(--mono); }
+.glyph { text-align: center; }
+
+.state-ACTIVE { color: var(--ok); }
+.state-SUSPECT { color: var(--warn); }
+.state-ISOLATED { color: var(--isolated); }
+.state-UNAVAILABLE { color: var(--gone); }
+
+.mode-NORMAL { color: var(--ok); }
+.mode-DEGRADED { color: var(--warn); }
+.mode-DEAD_RECKONING { color: var(--warn); }
+.mode-LOW_CONFIDENCE { color: var(--bad); }
+.mode-UNSAFE { color: var(--bad); font-weight: 600; }
+.mode-INITIALIZING { color: var(--text-faint); }
+
+/* --------------------------------------------------------------- tables -- */
+
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line-soft); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+td.num { font-family: var(--mono); }
+tr.highlight td { background: rgba(77, 155, 224, 0.08); }
+
+.unit { color: var(--text-faint); font-size: 0.85em; }
+
+/* ---------------------------------------------------------------- events -- */
+
+.event-log { font-family: var(--mono); font-size: 11.5px; max-height: 220px; overflow: auto; }
+.event { display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+.event .t { color: var(--text-faint); }
+.event .why { color: var(--text-dim); grid-column: 2 / 3; font-size: 11px; }
+.event.fault .t { color: var(--bad); }
+
+.empty { color: var(--text-faint); font-size: 12px; font-style: italic; }
+
+/* ---------------------------------------------------------------- charts -- */
+
+.chart { width: 100%; display: block; }
+.chart-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; font-family: var(--mono); color: var(--text-dim); margin-top: 6px; }
+.chart-legend i { display: inline-block; width: 10px; height: 2px; margin-right: 5px; vertical-align: middle; }
+
+/* -------------------------------------------------------------- scenarios -- */
+
+.scenario-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.scenario-card { text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 12px; height: 100%; }
+.scenario-card .id { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.scenario-card .name { font-weight: 600; }
+.scenario-card .desc { color: var(--text-dim); font-size: 12px; }
+.scenario-card .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 8px; }
+.tag { font-family: var(--mono); font-size: 10px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--text-faint); }
+
+/* ---------------------------------------------------------------- prose -- */
+
+.prose { max-width: 76ch; }
+.prose h2 { font-size: 20px; margin: 28px 0 8px; }
+.prose h3 { font-size: 15px; margin: 22px 0 6px; color: var(--text-dim); }
+.prose p, .prose li { color: var(--text); }
+.prose code { font-family: var(--mono); font-size: 12.5px; background: var(--bg-panel-2); padding: 1px 5px; border-radius: 3px; }
+.prose pre { font-family: var(--mono); font-size: 12px; background: var(--bg-panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow-x: auto; }
+.prose blockquote { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--accent); background: var(--bg-panel); color: var(--text-dim); }
+
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-family: var(--mono); font-size: 12px; }
+.kv dt { color: var(--text-faint); }
+.kv dd { margin: 0; word-break: break-all; }
+
+.banner-error {
+  padding: 14px; border: 1px solid #5c2b2b; background: #241416; border-radius: 6px;
+  color: #f0b4b4; font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap;
+}
+
+.hero { text-align: center; padding: 48px 20px 24px; }
+.hero h1 { font-size: 34px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.hero .quote { font-family: var(--mono); color: var(--accent); margin-bottom: 18px; }
+.hero p { max-width: 62ch; margin: 0 auto 14px; color: var(--text-dim); }
+.hero .cta { display: flex; gap: 10px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
+
+.ladder { display: grid; gap: 10px; margin-top: 28px; }
+.ladder .step { display: grid; grid-template-columns: 180px 1fr; gap: 14px; align-items: baseline; padding: 10px 12px; }
+.ladder .step .who { font-family: var(--mono); font-size: 12px; }
+@media (max-width: 700px) { .ladder .step { grid-template-columns: 1fr; } }
+
+.footer { padding: 24px 20px 40px; color: var(--text-faint); font-size: 12px; text-align: center; }
+.footer a { color: var(--text-dim); }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}

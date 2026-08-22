@@ -1,0 +1,68 @@
+# SCN-007 - IMU severe random walk
+# A sustained noise burst on the inertial channel, well above the modelled spectral density.
+#
+# Objective: Filter consistency under an unmodelled noise level: does the covariance reflect the degradation, or does the filter stay overconfident?
+#
+# Safety: every fault below is arithmetic applied to synthetic measurements
+# inside this process. There is no radio, no signal generator and no receiver
+# parameter anywhere in the project. See SECURITY_AND_SAFETY.md.
+
+id: SCN-007
+name: "IMU severe random walk"
+description: "A sustained noise burst on the inertial channel, well above the modelled spectral density."
+objective: "Filter consistency under an unmodelled noise level: does the covariance reflect the degradation, or does the filter stay overconfident?"
+
+schema_version: 1
+seed: 107
+duration_s: 90
+dt_s: 0.01
+truth_profile: approach_ils_like
+
+scene:
+  runway_heading_deg: 140.0
+  glideslope_deg: 3.0
+  threshold_ned_m: [0.0, 0.0, 0.0]
+  runway_length_m: 3000.0
+  runway_width_m: 45.0
+
+sensors:
+  gnss:
+    enabled: true
+    rate_hz: 5.0
+    sigma_position_horizontal_m: 2.0
+    sigma_position_vertical_m: 3.5
+    sigma_velocity_mps: 0.10
+    latency_s: 0.08
+  imu:
+    enabled: true
+    rate_hz: 100.0
+    accel_noise_density_mps2_sqrthz: 0.003
+    gyro_noise_density_radps_sqrthz: 0.0002
+    accel_bias_walk_mps2_sqrts: 0.0001
+    gyro_bias_walk_radps_sqrts: 0.00001
+  baro:
+    enabled: true
+    rate_hz: 20.0
+    sigma_m: 0.6
+  vision:
+    enabled: true
+    rate_hz: 20.0
+    sigma_lateral_m: 0.8
+    sigma_longitudinal_m: 3.0
+    max_range_m: 3000.0
+
+estimators: [gnss_only, ins_dr, ekf, integrity_ekf, solsep_ekf]
+
+faults:
+  - id: F-IMU-NOISE
+    type: noise_burst
+    target: imu
+    start_s: 20.0
+    duration_s: 50.0
+    sigma: 0.12
+
+acceptance:
+  - id: AC-1
+    description: The run must remain numerically healthy under degraded inertial data.
+    estimator: any
+    max_position_rmse_m: 100000.0

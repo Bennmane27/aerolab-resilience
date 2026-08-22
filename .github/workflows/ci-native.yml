@@ -1,0 +1,100 @@
+# AEROLAB RESILIENCE - native build, tests and sanitizers.
+# Requirements: VNV-004, VNV-005, VNV-008, AT-010, AT-011, NFR-001.
+name: ci-native
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.preset }} (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: debug,   compiler: gcc,   cc: gcc,   cxx: g++ }
+          - { preset: release, compiler: gcc,   cc: gcc,   cxx: g++ }
+          - { preset: asan,    compiler: clang, cc: clang, cxx: clang++ }
+          - { preset: ubsan,   compiler: clang, cc: clang, cxx: clang++ }
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake clang
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build build/${{ matrix.preset }} -j
+      # AT-010: the sanitizer presets must come back clean, not merely finish.
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
+  scenario-regression:
+    name: fourteen scenario regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+      - run: cmake --preset release && cmake --build build/release -j
+      # VNV-020: every catalogue scenario runs and satisfies its own acceptance
+      # block before anything is released.
+      - name: Run every scenario
+        run: |
+          mkdir -p results
+          failed=0
+          for f in scenarios/SCN-*.yaml; do
+            if ! ./build/release/bin/aerolab_cli --scenario "$f" \
+                 --config configs/evaluation.json --out results --quiet; then
+              echo "::error file=$f::scenario failed its acceptance block"
+              failed=1
+            fi
+          done
+          exit $failed
+      - name: Smoke campaign
+        run: ./build/release/bin/aerolab_bench --suite benchmark/smoke.yaml --out results/smoke --jobs 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scenario-results
+          path: results/
+
+  coverage:
+    name: coverage (VNV-008)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build cmake lcov
+      - run: cmake --preset coverage && cmake --build build/coverage -j
+      - run: ctest --preset coverage --output-on-failure
+      - name: Collect
+        run: |
+          lcov --directory build/coverage --capture --output-file coverage.info \
+               --ignore-errors mismatch,gcov,source
+          lcov --remove coverage.info "/usr/*" "*/tests/*" "*/_deps/*" "*/apps/*" \
+               --output-file coverage.core.info --ignore-errors unused
+          lcov --list coverage.core.info | tee coverage-summary.txt
+      # AT-011 target: >= 90 % lines over core/.
+      - name: Enforce the line coverage floor
+        run: |
+          pct=$(lcov --summary coverage.core.info 2>&1 | grep -oP "lines\.+: \K[0-9.]+")
+          echo "core line coverage: ${pct}%"
+          awk -v p="$pct" "BEGIN { exit (p+0 >= 90.0) ? 0 : 1 }" \
+            || { echo "::error::core line coverage ${pct}% is below the 90% floor of VNV-008"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: |
+            coverage.core.info
+            coverage-summary.txt

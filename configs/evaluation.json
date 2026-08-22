@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "name": "evaluation",
+  "purpose": "Frozen configuration used for the published benchmark campaign. Section 8.1 requires the tuning and evaluation parameter sets to be separate and the evaluation set to be frozen BEFORE the final campaign runs. Any change to this file after a published run invalidates that run and must appear in CHANGELOG.md.",
+  "frozen_on": "2026-08-21",
+
+  "estimator": {
+    "_comment_process": "Process noise densities. These track the sensor models declared in the scenarios; a mismatch here is an honest modelling error, not a tuning knob to be turned after seeing results.",
+    "accel_noise_density_mps2_sqrthz": 0.003,
+    "gyro_noise_density_radps_sqrthz": 0.0002,
+    "accel_bias_walk_mps2_sqrts": 0.0001,
+    "gyro_bias_walk_radps_sqrts": 0.00001,
+
+    "_comment_measurement": "Measurement noise. baro_bias_uncertainty_m accounts for the barometric bias the 15 state vector does not estimate (see docs/methodology/estimators.md).",
+    "gnss_sigma_horizontal_m": 2.0,
+    "gnss_sigma_vertical_m": 3.5,
+    "gnss_sigma_velocity_mps": 0.10,
+    "baro_sigma_m": 0.6,
+    "baro_bias_uncertainty_m": 3.0,
+    "vision_sigma_lateral_m": 0.8,
+    "vision_sigma_longitudinal_m": 3.0,
+
+    "_comment_alignment": "Simulated alignment quality. Applied identically to every architecture of every run.",
+    "init_sigma_position_m": 8.0,
+    "init_sigma_velocity_mps": 0.5,
+    "init_sigma_attitude_deg": 1.0,
+    "init_sigma_accel_bias_mps2": 0.05,
+    "init_sigma_gyro_bias_radps": 0.002,
+
+    "_comment_latency": "Delayed measurement policy. Anything inside rollback_window_s is reprocessed exactly; beyond max_measurement_age_s it is refused as stale.",
+    "enable_rollback": true,
+    "rollback_window_s": 2.5,
+    "max_measurement_age_s": 2.5,
+
+    "gnss_only_timeout_s": 2.0
+  },
+
+  "integrity": {
+    "_comment_gate": "The gate is stated as a probability of false alert per update, not as a number of sigmas. At 5 Hz over a 90 s run a GNSS position channel sees ~450 updates, so 1e-3 predicts ~0.45 gate crossings per nominal run - which the persistence counter then has to see three times consecutively before raising anything. AT-003 measures whether that holds.",
+    "gate_probability_false_alert": 0.001,
+    "explicit_gate_threshold": -1.0,
+
+    "suspect_persistence_updates": 3,
+    "isolate_persistence_s": 1.2,
+    "clear_time_s": 2.0,
+    "recovery_window_s": 6.0,
+
+    "stale_timeout_s": 1.0,
+    "unavailable_timeout_s": 2.0,
+
+    "enable_velocity_consistency": true,
+    "enable_vision_cross_check": true,
+    "vision_cross_check_threshold_m": 25.0,
+    "vision_min_quality": 0.2,
+
+    "_comment_separation": "Solution separation runs at a tighter false alert probability than the innovation gate because it is a second line: it should only speak when it is confident, and its statistic does not lose power as a fault grows.",
+    "solution_separation_probability_false_alert": 0.00001,
+
+    "_comment_inflation": "cov(x_full - x_sub) = P_sub - P_full only holds for two optimal filters. Neither of ours is exactly optimal, so the true covariance of the difference is larger and the raw statistic is biased high. Measured on the tuning seed set: raw (1.0) isolated GNSS on 4 % of nominal runs; 1.5 is the smallest value reaching zero over 400 nominal runs; 2.0 was frozen for margin because it gives identical detection performance (100 % on SCN-003 and SCN-004, unchanged TTD P95 of 0.28 s and 8.48 s) while 3.0 starts costing post-fault re-isolations for no gain. See docs/methodology/integrity.md.",
+    "solution_separation_covariance_inflation": 2.0,
+
+    "_comment_separation_rate": "The separation test is evaluated when a GNSS position update is processed, not every tick. Running a 5 Hz statistic at 100 Hz multiplies highly correlated threshold crossings without adding information; that change alone took the nominal false isolation rate from 12 % to 4 %.",
+    "solution_separation_on_gnss_update_only": true,
+
+    "low_confidence_fix_age_s": 6.0,
+    "unsafe_fix_age_s": 20.0
+  }
+}

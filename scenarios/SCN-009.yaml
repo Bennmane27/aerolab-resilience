@@ -1,0 +1,70 @@
+# SCN-009 - Latency burst
+# 1.4 s of extra delivery delay on the GNSS channel for 30 s. Sample timestamps are untouched, so the true age stays observable.
+#
+# Objective: Delayed measurement handling: reprocessed by rollback inside the buffer, refused as stale beyond it (NAV-009).
+#
+# Safety: every fault below is arithmetic applied to synthetic measurements
+# inside this process. There is no radio, no signal generator and no receiver
+# parameter anywhere in the project. See SECURITY_AND_SAFETY.md.
+
+id: SCN-009
+name: "Latency burst"
+description: "1.4 s of extra delivery delay on the GNSS channel for 30 s. Sample timestamps are untouched, so the true age stays observable."
+objective: "Delayed measurement handling: reprocessed by rollback inside the buffer, refused as stale beyond it (NAV-009)."
+
+schema_version: 1
+seed: 109
+duration_s: 90
+dt_s: 0.01
+truth_profile: approach_ils_like
+
+scene:
+  runway_heading_deg: 140.0
+  glideslope_deg: 3.0
+  threshold_ned_m: [0.0, 0.0, 0.0]
+  runway_length_m: 3000.0
+  runway_width_m: 45.0
+
+sensors:
+  gnss:
+    enabled: true
+    rate_hz: 5.0
+    sigma_position_horizontal_m: 2.0
+    sigma_position_vertical_m: 3.5
+    sigma_velocity_mps: 0.10
+    latency_s: 0.08
+  imu:
+    enabled: true
+    rate_hz: 100.0
+    accel_noise_density_mps2_sqrthz: 0.003
+    gyro_noise_density_radps_sqrthz: 0.0002
+    accel_bias_walk_mps2_sqrts: 0.0001
+    gyro_bias_walk_radps_sqrts: 0.00001
+  baro:
+    enabled: true
+    rate_hz: 20.0
+    sigma_m: 0.6
+  vision:
+    enabled: true
+    rate_hz: 20.0
+    sigma_lateral_m: 0.8
+    sigma_longitudinal_m: 3.0
+    max_range_m: 3000.0
+
+estimators: [gnss_only, ins_dr, ekf, integrity_ekf, solsep_ekf]
+
+faults:
+  - id: F-LATENCY
+    type: latency
+    target: gnss
+    start_s: 25.0
+    duration_s: 30.0
+    latency_s: 1.4
+
+acceptance:
+  - id: AC-1
+    description: >
+      A latency burst must not destroy the solution. The rollback buffer covers
+      2.5 s, so 1.4 s sits inside the reprocessing envelope.
+    estimator: integrity_ekf
+    max_position_rmse_m: 60.0

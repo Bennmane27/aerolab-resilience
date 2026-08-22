@@ -1,0 +1,63 @@
+# AEROLAB RESILIENCE - WebAssembly core, parity check and web build.
+# Requirements: SYS-006, VNV-010, AT-009, AT-012, NFR-010, NFR-012.
+name: ci-wasm
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+
+      - name: Build the native reference
+        run: cmake --preset release && cmake --build build/release -j
+
+      - name: Build the WebAssembly core
+        run: |
+          emcmake cmake --preset wasm
+          cmake --build build/wasm -j
+
+      # NFR-012: the compressed download budget.
+      - name: Check the payload budget
+        run: |
+          bytes=$(gzip -c web/public/wasm/aerolab.wasm | wc -c)
+          echo "gzipped wasm: ${bytes} bytes"
+          test "${bytes}" -lt 15728640 \
+            || { echo "::error::wasm payload exceeds the 15 MB budget of NFR-012"; exit 1; }
+
+      - name: Build the web application
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      # AT-009 / VNV-010: native and wasm must agree within a stated tolerance
+      # and on the integrity events. Bit-identical output across toolchains is
+      # NOT claimed - see docs/deviations.md DEV-003.
+      - name: Native / WebAssembly parity
+        run: node tools/analysis/wasm_parity.mjs
+
+      # AT-012: load, start, inject, report, with no blocking console error.
+      - name: Web end to end
+        run: |
+          cd web
+          npx playwright install --with-deps chromium
+          npm test
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-dist
+          path: web/dist/

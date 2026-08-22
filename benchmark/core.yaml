@@ -1,0 +1,35 @@
+# AEROLAB RESILIENCE - core evaluation suite.
+#
+# This is the campaign whose numbers go into BENCHMARK_REPORT.md. It runs on
+# configs/evaluation.json, which is frozen (section 8.1). The seed base is
+# deliberately different from benchmark/tuning.yaml so that no seed used while
+# adjusting parameters is reused when reporting results.
+schema_version: 1
+name: core-evaluation
+description: >
+  Full regression and Monte Carlo campaign over the fourteen catalogue
+  scenarios. Every architecture sees the identical measurement sequence within
+  each run, so any difference between them is attributable to the architecture
+  (BEN-002).
+config: configs/evaluation.json
+seed_base: 7000000
+
+trace_policy:
+  keep_first_n: 3
+  keep_failures: true
+
+scenarios:
+  - {path: scenarios/SCN-001.yaml, seeds: 1000}
+  - {path: scenarios/SCN-002.yaml, seeds: 1000}
+  - {path: scenarios/SCN-003.yaml, seeds: 1000}
+  - {path: scenarios/SCN-004.yaml, seeds: 1000}
+  - {path: scenarios/SCN-005.yaml, seeds: 200}
+  - {path: scenarios/SCN-006.yaml, seeds: 1000}
+  - {path: scenarios/SCN-007.yaml, seeds: 200}
+  - {path: scenarios/SCN-008.yaml, seeds: 200}
+  - {path: scenarios/SCN-009.yaml, seeds: 200}
+  - {path: scenarios/SCN-010.yaml, seeds: 200}
+  - {path: scenarios/SCN-011.yaml, seeds: 200}
+  - {path: scenarios/SCN-012.yaml, seeds: 1000}
+  - {path: scenarios/SCN-013.yaml, seeds: 200}
+  - {path: scenarios/SCN-014.yaml, seeds: 200}

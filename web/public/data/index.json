@@ -1,0 +1,19 @@
+{
+  "scenarios": [
+    "SCN-001.yaml",
+    "SCN-002.yaml",
+    "SCN-003.yaml",
+    "SCN-004.yaml",
+    "SCN-005.yaml",
+    "SCN-006.yaml",
+    "SCN-007.yaml",
+    "SCN-008.yaml",
+    "SCN-009.yaml",
+    "SCN-010.yaml",
+    "SCN-011.yaml",
+    "SCN-012.yaml",
+    "SCN-013.yaml",
+    "SCN-014.yaml"
+  ],
+  "config": "configs/evaluation.json"
+}

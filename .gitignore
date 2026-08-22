@@ -1,0 +1,13 @@
+build/
+results/
+web/node_modules/
+web/dist/
+web/public/wasm/
+*.o
+*.gcda
+*.gcno
+*.profraw
+compile_commands.json
+.cache/
+__pycache__/
+.venv/

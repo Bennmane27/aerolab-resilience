@@ -1,0 +1,61 @@
+# AEROLAB RESILIENCE - publish the Web Lab to GitHub Pages on a tag.
+# Requirements: D-011, SYS-009, section 22 item 7.
+#
+# A tag only ships if the full test suite and all fourteen scenarios pass first.
+name: release-demo
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+
+      - name: Full verification
+        run: |
+          cmake --preset release && cmake --build build/release -j
+          ctest --preset release --output-on-failure
+          mkdir -p results
+          for f in scenarios/SCN-*.yaml; do
+            ./build/release/bin/aerolab_cli --scenario "$f" \
+              --config configs/evaluation.json --out results --quiet
+          done
+
+      - name: Build the demo
+        run: |
+          emcmake cmake --preset wasm
+          cmake --build build/wasm -j
+          cd web && npm ci && npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,44 @@
+# AEROLAB RESILIENCE - formatting and static analysis.
+# Requirements: VNV-006, VNV-007, NFR-006.
+name: static-analysis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: clang-format check
+        run: |
+          find core apps web/wasm tests \( -name "*.cpp" -o -name "*.hpp" \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror
+
+  clang-tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build cmake clang-tidy
+      - run: cmake --preset debug
+      # VNV-006: the core only. Test and third party code is out of scope.
+      - name: clang-tidy over core
+        run: |
+          find core/src -name "*.cpp" -print0 \
+            | xargs -0 clang-tidy -p build/debug --warnings-as-errors=*
+
+  cppcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y cppcheck
+      # VNV-007.
+      - name: cppcheck
+        run: |
+          cppcheck --enable=warning,performance,portability --std=c++17 \
+                   --inline-suppr --error-exitcode=1 --quiet \
+                   -I core/include core/src apps web/wasm

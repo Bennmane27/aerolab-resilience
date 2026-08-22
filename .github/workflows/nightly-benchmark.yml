@@ -1,0 +1,49 @@
+# AEROLAB RESILIENCE - nightly Monte Carlo campaign.
+# Requirements: BEN-015, BEN-017, section 8.1.
+#
+# The evaluation suite runs on configs/evaluation.json, which is frozen. Any
+# change to that file invalidates every published number and must be recorded in
+# CHANGELOG.md before the next campaign.
+name: nightly-benchmark
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: Seeds per scenario
+        default: "200"
+
+jobs:
+  campaign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build cmake python3
+      - run: cmake --preset release && cmake --build build/release -j
+
+      # BEN-012: a failed run is recorded and the campaign continues, so a
+      # non-zero exit here is data rather than an infrastructure failure.
+      - name: Evaluation campaign
+        run: |
+          ./build/release/bin/aerolab_bench --suite benchmark/core.yaml \
+            --out results/nightly --jobs "$(nproc)" \
+            --seeds "1:${{ github.event.inputs.seeds || 200 }}" || true
+
+      - name: Detectability floor sweep
+        run: bash tools/analysis/drift_sweep.sh 100 results/drift_sweep
+
+      - name: Regenerate the benchmark report
+        run: python3 tools/report/build_report.py results/nightly --sweep results/drift_sweep
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ github.run_number }}
+          path: |
+            results/nightly/manifest.json
+            results/nightly/summary.csv
+            results/nightly/runs.jsonl
+            results/drift_sweep/sweep.csv
+            BENCHMARK_REPORT.md

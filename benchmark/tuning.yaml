@@ -1,0 +1,16 @@
+# Tuning suite. Runs on configs/tuning.json and on a DIFFERENT seed base from
+# benchmark/core.yaml. Results from this suite are for setting thresholds and
+# must never be quoted as project performance (section 8.1).
+schema_version: 1
+name: tuning
+description: Development seed set. Not for publication.
+config: configs/tuning.json
+seed_base: 3000000
+trace_policy:
+  keep_first_n: 2
+  keep_failures: true
+scenarios:
+  - {path: scenarios/SCN-001.yaml, seeds: 100}
+  - {path: scenarios/SCN-003.yaml, seeds: 100}
+  - {path: scenarios/SCN-004.yaml, seeds: 100}
+  - {path: scenarios/SCN-012.yaml, seeds: 100}

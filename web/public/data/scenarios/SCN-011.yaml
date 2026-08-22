@@ -1,0 +1,67 @@
+# SCN-011 - GNSS loss and recovery
+# GNSS is unavailable from t=25 s to t=55 s, then returns nominal.
+#
+# Objective: Reintegration through a recovery window, with no unbounded position jump (INT-007).
+#
+# Safety: every fault below is arithmetic applied to synthetic measurements
+# inside this process. There is no radio, no signal generator and no receiver
+# parameter anywhere in the project. See SECURITY_AND_SAFETY.md.
+
+id: SCN-011
+name: "GNSS loss and recovery"
+description: "GNSS is unavailable from t=25 s to t=55 s, then returns nominal."
+objective: "Reintegration through a recovery window, with no unbounded position jump (INT-007)."
+
+schema_version: 1
+seed: 111
+duration_s: 90
+dt_s: 0.01
+truth_profile: approach_ils_like
+
+scene:
+  runway_heading_deg: 140.0
+  glideslope_deg: 3.0
+  threshold_ned_m: [0.0, 0.0, 0.0]
+  runway_length_m: 3000.0
+  runway_width_m: 45.0
+
+sensors:
+  gnss:
+    enabled: true
+    rate_hz: 5.0
+    sigma_position_horizontal_m: 2.0
+    sigma_position_vertical_m: 3.5
+    sigma_velocity_mps: 0.10
+    latency_s: 0.08
+  imu:
+    enabled: true
+    rate_hz: 100.0
+    accel_noise_density_mps2_sqrthz: 0.003
+    gyro_noise_density_radps_sqrthz: 0.0002
+    accel_bias_walk_mps2_sqrts: 0.0001
+    gyro_bias_walk_radps_sqrts: 0.00001
+  baro:
+    enabled: true
+    rate_hz: 20.0
+    sigma_m: 0.6
+  vision:
+    enabled: true
+    rate_hz: 20.0
+    sigma_lateral_m: 0.8
+    sigma_longitudinal_m: 3.0
+    max_range_m: 3000.0
+
+estimators: [gnss_only, ins_dr, ekf, integrity_ekf, solsep_ekf]
+
+faults:
+  - id: F-GNSS-OUTAGE
+    type: source_unavailable
+    target: gnss
+    start_s: 25.0
+    duration_s: 30.0
+
+acceptance:
+  - id: AC-1
+    description: The outage must be reported.
+    estimator: integrity_ekf
+    require_detection: true

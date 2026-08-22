@@ -1,0 +1,30 @@
+{
+  "name": "aerolab-resilience-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Web Lab for AEROLAB RESILIENCE - runs the same C++ core compiled to WebAssembly.",
+  "scripts": {
+    "predev": "node scripts/stage-data.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/stage-data.mjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.169.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9"
+  }
+}

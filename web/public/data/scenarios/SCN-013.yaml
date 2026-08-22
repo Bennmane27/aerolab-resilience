@@ -1,0 +1,77 @@
+# SCN-013 - Pseudorange outlier
+# A 60 m range bias on one satellite of an eight satellite synthetic constellation.
+#
+# Objective: RAIM-like detection and exclusion where the redundancy allows it (INT-021). No conformance to any RAIM standard is claimed.
+#
+# Safety: every fault below is arithmetic applied to synthetic measurements
+# inside this process. There is no radio, no signal generator and no receiver
+# parameter anywhere in the project. See SECURITY_AND_SAFETY.md.
+
+id: SCN-013
+name: "Pseudorange outlier"
+description: "A 60 m range bias on one satellite of an eight satellite synthetic constellation."
+objective: "RAIM-like detection and exclusion where the redundancy allows it (INT-021). No conformance to any RAIM standard is claimed."
+
+schema_version: 1
+seed: 113
+duration_s: 90
+dt_s: 0.01
+truth_profile: approach_ils_like
+
+scene:
+  runway_heading_deg: 140.0
+  glideslope_deg: 3.0
+  threshold_ned_m: [0.0, 0.0, 0.0]
+  runway_length_m: 3000.0
+  runway_width_m: 45.0
+
+sensors:
+  gnss:
+    enabled: true
+    rate_hz: 5.0
+    sigma_position_horizontal_m: 2.0
+    sigma_position_vertical_m: 3.5
+    sigma_velocity_mps: 0.10
+    latency_s: 0.08
+  imu:
+    enabled: true
+    rate_hz: 100.0
+    accel_noise_density_mps2_sqrthz: 0.003
+    gyro_noise_density_radps_sqrthz: 0.0002
+    accel_bias_walk_mps2_sqrts: 0.0001
+    gyro_bias_walk_radps_sqrts: 0.00001
+  baro:
+    enabled: true
+    rate_hz: 20.0
+    sigma_m: 0.6
+  vision:
+    enabled: true
+    rate_hz: 20.0
+    sigma_lateral_m: 0.8
+    sigma_longitudinal_m: 3.0
+    max_range_m: 3000.0
+  pseudorange:
+    enabled: true
+    rate_hz: 1.0
+    satellite_count: 8
+    sigma_m: 3.0
+
+estimators: [gnss_only, ins_dr, ekf, integrity_ekf, solsep_ekf]
+
+faults:
+  - id: F-PR-OUTLIER
+    type: pseudorange_outlier
+    target: gnss_pseudorange
+    start_s: 30.0
+    duration_s: -1
+    satellite_index: 3
+    range_bias_m: 60.0
+
+acceptance:
+  - id: AC-1
+    description: >
+      The run must complete with the pseudorange channel active. The RAIM
+      verdict itself is reported in the manifest rather than asserted here,
+      because exclusion depends on the geometry of the epoch.
+    estimator: integrity_ekf
+    max_position_rmse_m: 100000.0

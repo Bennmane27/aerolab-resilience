@@ -1,0 +1,234 @@
+id,section,priority,verification,requirement
+SYS-001,System,MUST,Test,"Le système doit séparer explicitement vérité terrain, mesures capteurs, mesures injectées et sorties estimateurs."
+SYS-002,System,MUST,Test,Le système doit exécuter un scénario à pas fixe déterministe.
+SYS-003,System,MUST,Test,Le système doit permettre de réinitialiser complètement un run sans redémarrer le processus.
+SYS-004,System,MUST,Test,Le système doit accepter un seed explicite et reproduire le même bruit pour la même version/configuration.
+SYS-005,System,MUST,Test,Le système doit exécuter au moins quatre architectures de navigation sur la même séquence de mesures.
+SYS-006,System,MUST,Test,Le système doit supporter les modes native benchmark et WebAssembly demo à partir du même core C++.
+SYS-007,System,MUST,Test,Le système doit inclure un mécanisme de version de schéma pour les fichiers de scénario et de télémétrie.
+SYS-008,System,MUST,Test,Le système doit enregistrer la version Git/commit dans les manifests de benchmark.
+SYS-009,System,MUST,Test,Le système doit rester fonctionnel sans connexion réseau une fois la démo chargée.
+SYS-010,System,MUST,Test,Le système doit signaler toute configuration invalide avant le démarrage du run.
+SYS-011,System,MUST,Test,Le système ne doit contenir aucun module d’émission RF ou de contrôle de matériel GNSS réel.
+SYS-012,System,MUST,Test,Le système doit fournir un mode replay ne recalculant pas les capteurs mais rejouant la télémétrie enregistrée.
+SYS-013,System,MUST,Test,Le système doit permettre l’ajout d’un nouveau capteur sans modifier le simulateur ground truth.
+SYS-014,System,MUST,Test,Le système doit permettre l’ajout d’un nouvel estimateur via interface commune.
+SYS-015,System,MUST,Test,Le système doit fournir une horloge de simulation monotone indépendante de l’horloge murale.
+SYS-016,System,MUST,Test,Le système doit exporter un verdict de conformité du run aux critères de la suite.
+SYS-017,System,MUST,Test,Le système doit conserver les échecs de runs au lieu de les masquer.
+SYS-018,System,MUST,Test,Le système doit fonctionner sous Linux/WSL pour le développement principal.
+SYS-019,System,SHOULD,Build,Le système devrait supporter Windows natif via CMake presets.
+SYS-020,System,COULD,Demo,Le système pourrait intégrer JSBSim comme source de ground truth optionnelle après V1.
+SIM-001,Simulator,MUST,Test,"Le simulateur doit produire position NED, vitesse NED et attitude à chaque tick."
+SIM-002,Simulator,MUST,Test,Le simulateur doit produire les grandeurs nécessaires à l’IMU synthétique.
+SIM-003,Simulator,MUST,Test,Le simulateur doit proposer un profil d’approche rectiligne.
+SIM-004,Simulator,MUST,Test,Le simulateur doit proposer un profil avec virage stabilisé.
+SIM-005,Simulator,MUST,Test,Le simulateur doit proposer un profil de roulage.
+SIM-006,Simulator,MUST,Test,Le simulateur doit supporter une durée de run d’au moins 10 minutes simulées.
+SIM-007,Simulator,MUST,Test,Le pas de temps de référence doit être configurable et fixé à 10 ms par défaut.
+SIM-008,Simulator,MUST,Test,Les trajectoires nominales doivent respecter des bornes de vitesse/accélération configurables.
+SIM-009,Simulator,MUST,Test,Le simulateur doit pouvoir charger la piste synthétique depuis un fichier de scène.
+SIM-010,Simulator,MUST,Test,Le simulateur doit exposer une transformation NED vers coordonnées UI.
+SIM-011,Simulator,MUST,Test,Le simulateur doit fournir une altitude ground truth indépendante du baromètre simulé.
+SIM-012,Simulator,MUST,Test,Le simulateur doit produire un identifiant de phase de mission.
+SIM-013,Simulator,MUST,Test,Le simulateur doit avoir des tests de conservation/cohérence cinématique sur profils simples.
+SIM-014,Simulator,MUST,Test,Le ground truth doit être immuable depuis les modules capteurs/faults/estimateurs.
+SIM-015,Simulator,SHOULD,Test,Un adaptateur WGS84 simplifié devrait être fourni pour afficher latitude/longitude.
+SENS-001,Sensors,MUST,Test,"Chaque mesure doit inclure sensor_id, sequence, sample_time et delivery_time."
+SENS-002,Sensors,MUST,Test,Le GNSS synthétique doit produire au minimum position 3D et vitesse 3D.
+SENS-003,Sensors,MUST,Test,"Le GNSS doit avoir cadence, bruit, biais et latence configurables."
+SENS-004,Sensors,MUST,Test,Le GNSS doit supporter un état unavailable.
+SENS-005,Sensors,MUST,Test,L’IMU doit produire accélération spécifique 3 axes et vitesse angulaire 3 axes.
+SENS-006,Sensors,MUST,Test,L’IMU doit supporter biais constant et random walk configurables.
+SENS-007,Sensors,MUST,Test,L’IMU doit fonctionner à au moins 100 Hz dans la configuration nominale.
+SENS-008,Sensors,MUST,Test,Le baromètre doit fournir une altitude/pression synthétique indépendante du GNSS.
+SENS-009,Sensors,MUST,Test,"Le capteur vision-relative doit fournir au minimum offset latéral, longitudinal et heading relatif piste."
+SENS-010,Sensors,MUST,Test,Le capteur vision-relative doit avoir un indicateur de validité/quality séparé de la mesure.
+SENS-011,Sensors,MUST,Test,Chaque capteur doit posséder un flux RNG indépendant dérivé du seed global.
+SENS-012,Sensors,MUST,Test,Les modèles de bruit doivent être documentés avec unités.
+SENS-013,Sensors,MUST,Test,Une mesure en retard doit conserver son sample_time original.
+SENS-014,Sensors,MUST,Test,Une valeur NaN/Inf générée accidentellement doit être détectée et marquée invalid avant l’estimateur.
+SENS-015,Sensors,MUST,Test,Les capteurs doivent être activables/désactivables par configuration.
+SENS-016,Sensors,MUST,Test,Les covariances de mesure utilisées par les estimateurs doivent être configurables.
+SENS-017,Sensors,MUST,Test,Le GNSS doit pouvoir simuler une perte progressive de disponibilité.
+SENS-018,Sensors,MUST,Test,La vision doit pouvoir simuler une baisse de qualité sans devenir immédiatement unavailable.
+SENS-019,Sensors,SHOULD,Test,L’extension GNSS pseudorange doit simuler au moins 6 satellites visibles.
+SENS-020,Sensors,SHOULD,Test,L’extension pseudorange devrait permettre un outlier sur satellite ciblé.
+FI-001,Fault injection,MUST,Test,Le fault engine doit supporter une perte totale de source.
+FI-002,Fault injection,MUST,Test,Le fault engine doit supporter un freeze de valeur et/ou timestamp.
+FI-003,Fault injection,MUST,Test,Le fault engine doit supporter un biais step.
+FI-004,Fault injection,MUST,Test,Le fault engine doit supporter une rampe de biais.
+FI-005,Fault injection,MUST,Test,Le fault engine doit supporter un noise burst.
+FI-006,Fault injection,MUST,Test,Le fault engine doit supporter une latence additionnelle.
+FI-007,Fault injection,MUST,Test,Le fault engine doit supporter un drop probabiliste de mesures.
+FI-008,Fault injection,MUST,Test,Le fault engine doit supporter un GNSS position step spoof synthétique.
+FI-009,Fault injection,MUST,Test,Le fault engine doit supporter un GNSS slow-drift synthétique.
+FI-010,Fault injection,MUST,Test,Le fault engine doit supporter un GNSS velocity inconsistency synthétique.
+FI-011,Fault injection,MUST,Test,Le fault engine doit supporter un biais IMU accélération.
+FI-012,Fault injection,MUST,Test,Le fault engine doit supporter un biais IMU gyroscope.
+FI-013,Fault injection,MUST,Test,Le fault engine doit supporter une dégradation vision.
+FI-014,Fault injection,MUST,Test,Le fault engine doit supporter plusieurs faults simultanés.
+FI-015,Fault injection,MUST,Test,Chaque fault doit générer des événements start/end enregistrés.
+FI-016,Fault injection,MUST,Test,Le fault engine doit être entièrement déterministe à seed/config identiques.
+FI-017,Fault injection,MUST,Test,Le fault engine ne doit jamais modifier le ground truth.
+FI-018,Fault injection,MUST,Test,Le fault engine doit rejeter les amplitudes/unités incohérentes avant exécution.
+FI-019,Fault injection,MUST,Test,Le fault engine doit permettre un trigger temporel absolu.
+FI-020,Fault injection,SHOULD,Test,Le fault engine devrait permettre un trigger basé sur phase de mission.
+NAV-001,Navigation,MUST,Test,NAV-A doit fournir une baseline GNSS-only.
+NAV-002,Navigation,MUST,Test,NAV-B doit fournir une baseline inertial dead reckoning.
+NAV-003,Navigation,MUST,Test,NAV-C doit implémenter un EKF GNSS/IMU documenté.
+NAV-004,Navigation,MUST,Test,NAV-D doit réutiliser la fusion EKF avec politique d’intégrité séparée.
+NAV-005,Navigation,MUST,Test,"Chaque estimateur doit implémenter initialize, predict, update, reset et solution."
+NAV-006,Navigation,MUST,Test,Aucun estimateur benchmark ne doit accéder au ground truth.
+NAV-007,Navigation,MUST,Test,Les estimateurs doivent gérer une mesure unavailable sans crash.
+NAV-008,Navigation,MUST,Test,Les estimateurs doivent gérer des cadences asynchrones.
+NAV-009,Navigation,MUST,Test,Les estimateurs doivent gérer les timestamps échantillon et livraison.
+NAV-010,Navigation,MUST,Test,Les matrices de covariance doivent rester symétrisées/validées numériquement.
+NAV-011,Navigation,MUST,Test,Les angles doivent être normalisés selon une convention unique documentée.
+NAV-012,Navigation,MUST,Test,Les estimateurs doivent publier une covariance ou indicateur d’incertitude.
+NAV-013,Navigation,MUST,Test,Les paramètres Q/R doivent provenir de fichiers de configuration.
+NAV-014,Navigation,MUST,Test,Les sorties NaN/Inf doivent provoquer un verdict run invalid et un dump diagnostic.
+NAV-015,Navigation,MUST,Test,Le reset doit restaurer exactement l’état initial.
+NAV-016,Navigation,MUST,Test,Le core doit fournir une version reference de l’EKF testable sur cas analytiques simples.
+NAV-017,Navigation,SHOULD,Benchmark,NAV-E devrait implémenter un filtre robuste Student-t ou particulaire.
+NAV-018,Navigation,SHOULD,Benchmark,Une comparaison de sensitivité Q/R devrait être automatisable.
+INT-001,Integrity,MUST,Test,Le gestionnaire d’intégrité doit calculer l’innovation pour chaque mise à jour utilisée.
+INT-002,Integrity,MUST,Test,Le gestionnaire d’intégrité doit calculer la covariance d’innovation S.
+INT-003,Integrity,MUST,Test,Le gestionnaire d’intégrité doit calculer le NIS lorsque les dimensions le permettent.
+INT-004,Integrity,MUST,Test,Les seuils de gating doivent être configurables et documentés.
+INT-005,Integrity,MUST,Test,Une source doit pouvoir passer ACTIVE→SUSPECT sans être immédiatement exclue.
+INT-006,Integrity,MUST,Test,Une exclusion doit respecter un critère de persistance configurable.
+INT-007,Integrity,MUST,Test,Une réintégration doit respecter une fenêtre de recovery configurable.
+INT-008,Integrity,MUST,Test,Le gestionnaire doit produire un reason code pour chaque transition.
+INT-009,Integrity,MUST,Test,Le gestionnaire doit distinguer ISOLATED de UNAVAILABLE.
+INT-010,Integrity,MUST,Test,Le gestionnaire doit exposer mode monitor-only.
+INT-011,Integrity,MUST,Test,Le gestionnaire doit pouvoir refuser une mesure sans arrêter l’estimateur.
+INT-012,Integrity,MUST,Test,"Le gestionnaire doit journaliser statistic, threshold et timestamp pour toute alerte."
+INT-013,Integrity,MUST,Test,Le gestionnaire doit déclarer un mode LOW_CONFIDENCE/UNSAFE lorsque la redondance devient insuffisante selon la politique.
+INT-014,Integrity,MUST,Test,Le gestionnaire ne doit pas forcer une position “valide” lorsque ses propres critères ne sont plus satisfaits.
+INT-015,Integrity,MUST,Test,Le trust score UI doit être dérivé de métriques explicites et rester distinct de la décision de gating.
+INT-016,Integrity,MUST,Test,Le système doit permettre une cross-check GNSS vs inertiel.
+INT-017,Integrity,MUST,Test,Le système doit permettre une cross-check GNSS vs vision-relative dans la zone où vision est disponible.
+INT-018,Integrity,MUST,Test,Le système doit permettre une détection stale via âge de mesure.
+INT-019,Integrity,MUST,Test,Le système doit permettre une détection de séquence répétée/anormale.
+INT-020,Integrity,MUST,Test,Les faux positifs de l’intégrité doivent être mesurés sur scénarios nominaux.
+INT-021,Integrity,SHOULD,Benchmark,Le module pseudorange devrait implémenter une stratégie RAIM-like d’exclusion de mesure.
+INT-022,Integrity,COULD,Analysis,Le projet pourrait étudier solution separation/ARAIM-like à titre pédagogique sans revendication de conformité.
+BEN-001,Benchmark,MUST,Test,"Le benchmark doit accepter une liste de scénarios, estimateurs et seeds."
+BEN-002,Benchmark,MUST,Test,Le benchmark doit exécuter les mêmes seeds pour toutes les architectures comparées.
+BEN-003,Benchmark,MUST,Test,"Le benchmark doit produire RMSE, erreur max et P95."
+BEN-004,Benchmark,MUST,Test,Le benchmark doit produire Time to Detect pour faults détectables.
+BEN-005,Benchmark,MUST,Test,Le benchmark doit produire Time to Isolate lorsque applicable.
+BEN-006,Benchmark,MUST,Test,Le benchmark doit produire false alarm rate sur runs nominaux.
+BEN-007,Benchmark,MUST,Test,Le benchmark doit produire missed detection rate sur campagnes faultées.
+BEN-008,Benchmark,MUST,Test,Le benchmark doit produire availability et continuity selon définitions versionnées.
+BEN-009,Benchmark,MUST,Test,Le benchmark doit mesurer CPU tick p50/p95/p99 en natif.
+BEN-010,Benchmark,MUST,Test,Le benchmark doit mesurer empreinte mémoire approximative ou instrumentée.
+BEN-011,Benchmark,MUST,Test,Le benchmark doit inclure le manifest de configuration complet.
+BEN-012,Benchmark,MUST,Test,Le benchmark doit continuer la campagne après un run en échec et l’enregistrer.
+BEN-013,Benchmark,MUST,Test,Le benchmark doit générer un résumé CSV et JSON.
+BEN-014,Benchmark,MUST,Test,Le benchmark doit permettre de reconstruire un run individuel depuis son manifest.
+BEN-015,Benchmark,MUST,Test,Le benchmark doit pouvoir exécuter au moins 1 000 seeds/scénario principal.
+BEN-016,Benchmark,MUST,Test,"Les agrégations doivent inclure médiane, P95 et pire cas."
+BEN-017,Benchmark,MUST,Test,Le benchmark doit séparer dataset de tuning et dataset d’évaluation finale.
+BEN-018,Benchmark,MUST,Test,Le benchmark doit produire un tableau comparatif par architecture.
+BEN-019,Benchmark,SHOULD,Demo,Le benchmark devrait générer automatiquement graphiques et rapport HTML/Markdown.
+BEN-020,Benchmark,COULD,Performance,Le benchmark pourrait paralléliser les runs indépendants.
+UI-001,Interface,MUST,Test,La landing page doit expliquer le projet en une phrase compréhensible sans jargon.
+UI-002,Interface,MUST,Test,Le sélecteur de scénario doit présenter l’effet attendu sans dévoiler de techniques RF réelles.
+UI-003,Interface,MUST,Test,La Live Lab doit afficher simultanément ground truth et au moins une estimation.
+UI-004,Interface,MUST,Test,Le ground truth doit être visuellement marqué “SIMULATION TRUTH — not available to estimator”.
+UI-005,Interface,MUST,Test,La Live Lab doit afficher état de chaque capteur.
+UI-006,Interface,MUST,Test,La Live Lab doit afficher erreur de position courante.
+UI-007,Interface,MUST,Test,La Live Lab doit afficher événements d’intégrité horodatés.
+UI-008,Interface,MUST,Test,La Live Lab doit permettre pause/reprise/reset.
+UI-009,Interface,MUST,Test,"La Live Lab doit permettre vitesse x0.25, x1 et x4."
+UI-010,Interface,MUST,Test,La Live Lab doit permettre injection manuelle pour les faults autorisés du scénario.
+UI-011,Interface,MUST,Test,La Compare View doit superposer au moins trois solutions.
+UI-012,Interface,MUST,Test,La Compare View doit afficher un tableau de métriques final.
+UI-013,Interface,MUST,Test,L’Engineering View doit afficher erreur de position temporelle.
+UI-014,Interface,MUST,Test,L’Engineering View doit afficher NIS/résidus et seuils.
+UI-015,Interface,MUST,Test,L’Engineering View doit afficher états capteurs sur timeline.
+UI-016,Interface,MUST,Test,L’Engineering View doit afficher covariance/incertitude d’au moins l’EKF.
+UI-017,Interface,MUST,Test,Chaque transition d’état doit disposer d’une explication “why”.
+UI-018,Interface,MUST,Test,Les couleurs doivent être doublées par texte/icônes pour accessibilité.
+UI-019,Interface,MUST,Test,Les unités doivent être visibles sur toutes les valeurs.
+UI-020,Interface,MUST,Test,Le site doit être utilisable sur écran laptop 1366×768.
+UI-021,Interface,MUST,Test,Le site doit rester utilisable au clavier pour les actions principales.
+UI-022,Interface,MUST,Test,Le site doit afficher clairement qu’il s’agit d’un démonstrateur de simulation non certifié.
+UI-023,Interface,MUST,Test,Le rapport de run doit être téléchargeable comme JSON et lisible à l’écran.
+UI-024,Interface,MUST,Test,La page Methodology doit lier vers les sources industrielles.
+UI-025,Interface,MUST,Test,La page Failure Catalog doit présenter au moins trois limites/échecs observés avant publication finale.
+UI-026,Interface,SHOULD,Demo,La démo devrait offrir une caméra piste synthétique en plus de la carte 3D.
+UI-027,Interface,COULD,Demo,La démo pourrait inclure une vue “public mode” simplifiée en plein écran.
+DATA-001,Data,MUST,Test,Tous les fichiers texte doivent être UTF-8.
+DATA-002,Data,MUST,Test,Les scénarios doivent utiliser un schéma versionné.
+DATA-003,Data,MUST,Test,Les unités doivent être explicites dans le schéma ou le nom de champ.
+DATA-004,Data,MUST,Test,La télémétrie doit être append-only pendant un run.
+DATA-005,Data,MUST,Test,"Le manifest doit contenir seed, commit, build type, scenario hash et config hash."
+DATA-006,Data,MUST,Test,Les résultats agrégés ne doivent pas écraser les traces individuelles.
+DATA-007,Data,MUST,Test,Les fichiers golden doivent être versionnés avec justification lors de toute mise à jour.
+DATA-008,Data,MUST,Test,Le système doit détecter un schéma incompatible et refuser silencieusement aucune conversion.
+DATA-009,Data,MUST,Test,Les floats de rapport doivent utiliser une précision suffisante pour le replay.
+DATA-010,Data,MUST,Test,Les données de test publiques ne doivent contenir aucune donnée personnelle ou confidentielle.
+DATA-011,Data,SHOULD,Test,Les campagnes lourdes devraient pouvoir stocker seulement des runs sélectionnés en trace complète pour limiter l’espace.
+API-001,Interfaces,MUST,Test,Le binding WASM doit exposer create/reset/step/loadScenario/getFrame.
+API-002,Interfaces,MUST,Test,Le binding WASM ne doit pas exposer de mutation directe du ground truth depuis l’UI hors contrôles de scénario.
+API-003,Interfaces,MUST,Test,Les erreurs C++ traversant le binding doivent devenir des erreurs structurées côté TypeScript.
+API-004,Interfaces,MUST,Test,Le schéma telemetry utilisé par le web doit être versionné.
+API-005,Interfaces,MUST,Test,Le CLI doit retourner un code non nul en cas de configuration invalide.
+API-006,Interfaces,MUST,Test,Le CLI doit fournir --help et --version.
+API-007,Interfaces,MUST,Test,Le benchmark doit accepter un chemin de sortie explicite.
+API-008,Interfaces,MUST,Test,Le replay doit vérifier le hash/schema avant lecture.
+API-009,Interfaces,COULD,Build,Une API C stable pourrait être ajoutée pour intégration future.
+VNV-001,Verification and validation,MUST,Test,Chaque module core doit avoir des tests unitaires des chemins nominaux et erreurs.
+VNV-002,Verification and validation,MUST,Test,Chaque fault doit avoir au moins un test démontrant qu’il modifie la mesure et jamais le truth.
+VNV-003,Verification and validation,MUST,Test,Chaque scénario principal doit avoir un test d’intégration déterministe court.
+VNV-004,Verification and validation,MUST,Test,Le projet doit exécuter ASan dans la CI Linux debug.
+VNV-005,Verification and validation,MUST,Test,Le projet doit exécuter UBSan dans la CI Linux debug.
+VNV-006,Verification and validation,MUST,Test,Le projet doit exécuter clang-tidy sur le core.
+VNV-007,Verification and validation,MUST,Test,Le projet doit exécuter cppcheck ou équivalent en job dédié.
+VNV-008,Verification and validation,MUST,Test,Le core doit atteindre >=90% de couverture ligne et >=80% branche sur le périmètre défini.
+VNV-009,Verification and validation,MUST,Test,Les sorties du même run doivent être reproductibles dans une tolérance explicitement définie.
+VNV-010,Verification and validation,MUST,Test,Le build WASM doit exécuter des golden tests comparatifs avec le build natif.
+VNV-011,Verification and validation,MUST,Test,Les matrices de l’EKF doivent être testées sur cas analytiques simples.
+VNV-012,Verification and validation,MUST,Test,Le NIS doit être testé sur vecteurs artificiels connus.
+VNV-013,Verification and validation,MUST,Test,Les transitions ACTIVE/SUSPECT/ISOLATED/RECOVERY doivent être testées.
+VNV-014,Verification and validation,MUST,Test,Le stale detection doit être testée avec timestamps synthétiques.
+VNV-015,Verification and validation,MUST,Test,Le benchmark doit avoir un test de campagne contenant volontairement un run en échec.
+VNV-016,Verification and validation,MUST,Test,Les parsers config doivent être fuzzés ou property-tested sur entrées malformées.
+VNV-017,Verification and validation,MUST,Test,Le serializer telemetry doit être testé sur valeurs limites.
+VNV-018,Verification and validation,MUST,Test,La UI doit avoir des tests de composants sur états sensor health.
+VNV-019,Verification and validation,MUST,Test,La UI doit avoir un test E2E minimal : load→start→fault→report.
+VNV-020,Verification and validation,MUST,Test,"Avant release, les 14 scénarios doivent être exécutés en campagne de non-régression."
+VNV-021,Verification and validation,MUST,Test,Le rapport final doit inclure les versions des outils et compilateurs.
+VNV-022,Verification and validation,MUST,Test,Le projet doit conserver une trace des déviations d’exigence.
+VNV-023,Verification and validation,SHOULD,Test,Un job Valgrind devrait être exécuté périodiquement sur Linux natif.
+VNV-024,Verification and validation,SHOULD,Analysis,Une analyse de sensibilité des seuils devrait être incluse dans le rapport final.
+NFR-001,Non-functional,MUST,Test,Le core doit être compilable avec warnings élevés et zéro warning accepté dans le code projet.
+NFR-002,Non-functional,MUST,Test,Le core doit éviter les allocations dynamiques dans la boucle de simulation après initialisation lorsque raisonnablement possible.
+NFR-003,Non-functional,MUST,Test,Le core doit utiliser RAII et ownership explicite.
+NFR-004,Non-functional,MUST,Test,Le code doit interdire les using namespace globaux dans les headers.
+NFR-005,Non-functional,MUST,Test,"Les unités physiques doivent être documentées et, idéalement, reflétées dans les noms de variables."
+NFR-006,Non-functional,MUST,Test,Le code doit être formaté automatiquement par clang-format.
+NFR-007,Non-functional,MUST,Test,Les constantes doivent être nommées ; aucun seuil d’intégrité anonyme dans le code.
+NFR-008,Non-functional,MUST,Test,Le runtime natif doit soutenir 100 Hz sur une machine laptop standard avec marge importante.
+NFR-009,Non-functional,MUST,Test,Le tick core p95 cible doit rester <2 ms dans la configuration V1 de référence sur la machine de benchmark déclarée.
+NFR-010,Non-functional,MUST,Test,La démo web doit viser >=30 FPS avec 4 estimateurs visualisés.
+NFR-011,Non-functional,MUST,Test,La mémoire WASM initiale doit rester raisonnable ; cible <128 MB.
+NFR-012,Non-functional,MUST,Test,Le chargement initial de la démo compressée devrait rester <15 MB hors vidéos optionnelles.
+NFR-013,Non-functional,MUST,Test,Le projet doit être reproductible depuis README sur une machine propre.
+NFR-014,Non-functional,MUST,Test,Le projet doit fournir CMakePresets.json.
+NFR-015,Non-functional,MUST,Test,Le projet doit fournir une licence open-source compatible avec les dépendances retenues.
+NFR-016,Non-functional,MUST,Test,Le projet ne doit utiliser aucun logo Airbus/Safran/Thales dans l’UI sans autorisation ; les marques peuvent être citées textuellement comme références.
+NFR-017,Non-functional,MUST,Test,Le projet doit inclure un disclaimer non-affiliation.
+NFR-018,Non-functional,MUST,Test,Le projet doit être documenté en anglais dans le repo public ; un résumé français peut être fourni.
+NFR-019,Non-functional,MUST,Test,Les erreurs utilisateur doivent être actionnables et ne pas afficher seulement “failed”.
+NFR-020,Non-functional,MUST,Test,Le système doit journaliser les erreurs techniques sans exposer de secrets (aucun secret n’est requis en V1).
+NFR-021,Non-functional,MUST,Test,Le code core doit séparer logique métier et rendu UI.
+NFR-022,Non-functional,MUST,Test,Le projet doit posséder une architecture suffisamment modulaire pour remplacer le modèle de truth sans réécrire les estimateurs.
+NFR-023,Non-functional,MUST,Test,Le projet doit posséder une architecture suffisamment modulaire pour remplacer l’UI sans réécrire le core.
+NFR-024,Non-functional,MUST,Test,La documentation doit indiquer clairement les hypothèses non réalistes/simplifications.
+NFR-025,Non-functional,MUST,Test,Les performances publiées doivent être reproductibles depuis une commande documentée.
+NFR-026,Non-functional,SHOULD,Build,Le projet devrait proposer une image Docker de benchmark.
+NFR-027,Non-functional,COULD,Build,Le projet pourrait fournir un package WASM npm interne.

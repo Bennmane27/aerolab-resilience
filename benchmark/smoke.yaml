@@ -1,0 +1,27 @@
+# Fast regression pass: every scenario, few seeds. Used by CI on every push and
+# by the pre-release checklist. It proves the fourteen scenarios still run and
+# still satisfy their acceptance blocks; it does not produce publishable
+# statistics.
+schema_version: 1
+name: smoke
+description: All fourteen scenarios, 5 seeds each.
+config: configs/evaluation.json
+seed_base: 9100000
+trace_policy:
+  keep_first_n: 1
+  keep_failures: true
+scenarios:
+  - {path: scenarios/SCN-001.yaml, seeds: 5}
+  - {path: scenarios/SCN-002.yaml, seeds: 5}
+  - {path: scenarios/SCN-003.yaml, seeds: 5}
+  - {path: scenarios/SCN-004.yaml, seeds: 5}
+  - {path: scenarios/SCN-005.yaml, seeds: 5}
+  - {path: scenarios/SCN-006.yaml, seeds: 5}
+  - {path: scenarios/SCN-007.yaml, seeds: 5}
+  - {path: scenarios/SCN-008.yaml, seeds: 5}
+  - {path: scenarios/SCN-009.yaml, seeds: 5}
+  - {path: scenarios/SCN-010.yaml, seeds: 5}
+  - {path: scenarios/SCN-011.yaml, seeds: 5}
+  - {path: scenarios/SCN-012.yaml, seeds: 5}
+  - {path: scenarios/SCN-013.yaml, seeds: 5}
+  - {path: scenarios/SCN-014.yaml, seeds: 5}
