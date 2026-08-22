@@ -48,8 +48,22 @@ if(NOT MSVC)
   target_compile_options(aerolab_tests PRIVATE -Wno-conversion -Wno-sign-conversion)
 endif()
 
+# The per-test timeout scales with the instrumentation, because the tests do
+# not get any smaller when the binary gets slower.
+#
+# AT003 runs the nominal false-alert budget over its full seed set. Uninstrumented
+# it fits inside 300 s; under AddressSanitizer it does not, and the run failed on
+# a TIMEOUT with no memory error reported - its neighbours were already taking
+# 218 s and 243 s in the same job. Cutting the seed count to fit would have
+# meant a weaker false-alert measurement on precisely the build where the
+# measurement is hardest to make, so the budget moves instead of the test.
+set(AEROLAB_TEST_TIMEOUT 300)
+if(AEROLAB_ENABLE_ASAN OR AEROLAB_ENABLE_UBSAN OR AEROLAB_ENABLE_COVERAGE)
+  set(AEROLAB_TEST_TIMEOUT 1200)
+endif()
+
 include(GoogleTest)
 gtest_discover_tests(aerolab_tests
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    DISCOVERY_TIMEOUT 60
-    PROPERTIES TIMEOUT 300)
+    DISCOVERY_TIMEOUT 120
+    PROPERTIES TIMEOUT ${AEROLAB_TEST_TIMEOUT})

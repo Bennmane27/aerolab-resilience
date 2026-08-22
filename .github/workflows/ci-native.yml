@@ -91,12 +91,28 @@ jobs:
       # exactly the errors that would have named the problem. A gate whose
       # number cannot be reproduced by a second reading of its own output is
       # not a gate, so the measurement was replaced rather than the threshold.
+      #
+      # ONE tolerated parse error, and only one. gcov reports absurd hit counts
+      # on heavily inlined accessors - 46 billion calls on Mat::operator() -
+      # which is GCC bug 68080 and nothing to do with this code. That corrupts
+      # the COUNT, not the fact that the line executed, and line coverage only
+      # asks whether it executed. This is not the blanket suppression removed
+      # above: `mismatch,gcov,source` hides structural disagreement between the
+      # notes and the source, which does invalidate the result.
       - name: Measure and enforce the line coverage floor
         run: |
           gcov_bin="gcov-$(gcc -dumpversion | cut -d. -f1)"
           command -v "$gcov_bin" >/dev/null || gcov_bin=gcov
           echo "gcc $(gcc -dumpversion), reading notes with $gcov_bin"
-          gcovr --root .                 --gcov-executable "$gcov_bin"                 --filter 'core/'                 --exclude '.*/_deps/.*'                 --print-summary                 --txt coverage-summary.txt                 --cobertura coverage.xml                 --fail-under-line 90.0
+          gcovr --root . \
+                --gcov-executable "$gcov_bin" \
+                --filter 'core/' \
+                --exclude '.*/_deps/.*' \
+                --gcov-ignore-parse-errors suspicious_hits.warn_once_per_file \
+                --print-summary \
+                --txt coverage-summary.txt \
+                --cobertura coverage.xml \
+                --fail-under-line 90.0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
