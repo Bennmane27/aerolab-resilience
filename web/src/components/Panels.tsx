@@ -1,91 +1,84 @@
 // AEROLAB RESILIENCE - shared display components.
 //
 // UI-005, UI-006, UI-007, UI-017, UI-018, UI-019.
+//
+// The reason codes, sensor states and navigation modes are the identifiers the
+// C++ engine emits and the telemetry records. They are never translated: a
+// reader comparing this screen against a JSON file has to see the same token.
+// Only the explanation beside them is.
 import type { ReactNode } from "react";
 import type { Frame, NavMode, SensorState } from "../core/session";
-import {
-  ESTIMATOR_COLORS,
-  ESTIMATOR_LABELS,
-  NAV_MODE_HELP,
-  SENSOR_STATE_GLYPH,
-} from "../core/session";
+import { ESTIMATOR_COLORS, SENSOR_STATE_GLYPH } from "../core/session";
+import { useLang } from "../i18n";
 
-export function Panel({ title, children, style }: { title: string; children: ReactNode; style?: React.CSSProperties }) {
+export function Panel({
+  title,
+  children,
+  actions,
+  scroll,
+  style,
+}: {
+  title: string;
+  children: ReactNode;
+  actions?: ReactNode;
+  /**
+   * `"fill"` makes the body take whatever height the panel was given and scroll
+   * inside it. A number caps the body at that many pixels.
+   *
+   * Prefer `"fill"`, and prefer neither. A fixed cap inside a column that
+   * already scrolls gives you two nested scrollbars where the inner one stops
+   * short of the content, which is a good way to make a panel look broken: the
+   * side column panels therefore set nothing at all and let the column scroll
+   * as one piece.
+   */
+  scroll?: number | "fill";
+  style?: React.CSSProperties;
+}) {
+  const fill = scroll === "fill";
   return (
-    <section className="panel" style={style}>
-      <h3>{title}</h3>
-      <div className="panel-body">{children}</div>
+    <section className={fill ? "panel panel-fill" : "panel"} style={style}>
+      <h3>
+        <span>{title}</span>
+        {actions && <span className="panel-actions">{actions}</span>}
+      </h3>
+      <div
+        className="panel-body"
+        style={typeof scroll === "number" ? { maxHeight: scroll, overflowY: "auto" } : undefined}
+      >
+        {children}
+      </div>
     </section>
   );
 }
 
-const SENSOR_LABELS: Record<string, string> = {
-  gnss: "GNSS",
-  imu: "IMU",
-  baro: "Baro",
-  vision: "Vision",
-};
-
-// UI-017: every state carries a plain-language explanation of what it means and
-// what follows from it. These strings are keyed on the reason codes the C++
-// integrity manager emits, so the UI cannot invent a status the engine did not
-// produce (section 4.3).
-const REASON_HELP: Record<string, string> = {
-  NONE: "Nominal.",
-  NIS_ABOVE_THRESHOLD:
-    "The measurement disagrees with the filter prediction by more than the gate allows for this source.",
-  NIS_PERSISTENT: "The disagreement persisted long enough to rule out a single outlier.",
-  NIS_NORMAL_CLEARED: "Residuals have been normal long enough for the source to be trusted again.",
-  RECOVERY_WINDOW_ELAPSED: "The recovery window has elapsed and the source is consistent again.",
-  MEASUREMENT_STALE:
-    "The sample timestamp is older than the freshness limit: the value may look plausible but it is not current.",
-  SEQUENCE_REPEATED: "The source is repeating a previous sample rather than producing a new one.",
-  SOURCE_UNAVAILABLE: "The source stopped delivering usable measurements.",
-  SOURCE_RETURNED: "The source is delivering again.",
-  CROSS_CHECK_INERTIAL:
-    "GNSS disagrees with where the inertial solution says the aircraft should be.",
-  CROSS_CHECK_VISION: "GNSS and the runway-relative vision fix disagree about the position.",
-  SOLUTION_SEPARATION:
-    "The all-sources solution has drifted away from the GNSS-free sub-filter by more than their combined uncertainty allows.",
-  INNOVATION_COVARIANCE_INVALID: "The innovation covariance was not usable; the update was refused.",
-  VELOCITY_INCONSISTENT:
-    "The reported velocity is not consistent with the rest of the solution, even though the position looks plausible.",
-  QUALITY_BELOW_THRESHOLD: "The source reports a quality too low for its measurement to be usable.",
-  REDUNDANCY_INSUFFICIENT: "Not enough independent sources remain to support an integrity claim.",
-  MANUAL_ISOLATION: "Isolated by an operator request.",
-};
-
-export function reasonHelp(reason: string): string {
-  return REASON_HELP[reason] ?? reason;
-}
-
 export function SensorHealth({ frame }: { frame: Frame | null }) {
+  const { t, num } = useLang();
   const sensors = frame?.sensors ?? {};
   const ids = Object.keys(sensors);
-  if (ids.length === 0) return <p className="empty">Waiting for the first measurements.</p>;
+  if (ids.length === 0) return <p className="empty">{t.panels.waiting}</p>;
   return (
     <div>
       {ids.map((id) => {
         const s = sensors[id];
+        const state = s.state as SensorState;
         return (
-          <div className="sensor-row" key={id}>
+          <div className="sensor-row" key={id} title={t.stateHelp[state]}>
             {/* UI-018: glyph + word + colour, never colour alone. */}
-            <span className={`glyph state-${s.state}`} aria-hidden="true">
-              {SENSOR_STATE_GLYPH[s.state as SensorState] ?? "?"}
+            <span className={`glyph state-${state}`} aria-hidden="true">
+              {SENSOR_STATE_GLYPH[state] ?? "?"}
             </span>
-            <span className="sensor-name">{SENSOR_LABELS[id] ?? id}</span>
-            <span className={`sensor-state state-${s.state}`}>{s.state}</span>
+            <span className="sensor-name">{t.panels.sensorNames[id] ?? id}</span>
+            <span className={`sensor-state state-${state}`}>{state}</span>
             <span className="sensor-meta">
-              age {s.age_ms.toFixed(0)}<span className="unit"> ms</span>
+              {t.panels.age} {num(s.age_ms, 0)}
+              <span className="unit"> ms</span>
               {" · NIS "}
-              {s.nis.toFixed(2)}
-              {s.threshold > 0 ? ` / ${s.threshold.toFixed(1)}` : ""}
-              {id === "vision" ? ` · quality ${(s.quality * 100).toFixed(0)}%` : ""}
+              {num(s.nis, 2)}
+              {s.threshold > 0 ? ` / ${num(s.threshold, 1)}` : ""}
+              {id === "vision" ? ` · ${t.panels.quality} ${num(s.quality * 100, 0)} %` : ""}
             </span>
             {s.reason !== "NONE" && (
-              <span className="sensor-meta" style={{ color: "var(--text-dim)" }}>
-                {reasonHelp(s.reason)}
-              </span>
+              <span className="sensor-reason">{t.reasonHelp[s.reason] ?? s.reason}</span>
             )}
           </div>
         );
@@ -94,47 +87,51 @@ export function SensorHealth({ frame }: { frame: Frame | null }) {
   );
 }
 
-export function SolutionTable({ frame, highlight }: { frame: Frame | null; highlight?: string }) {
+export function SolutionTable({
+  frame,
+  labels,
+  highlight,
+}: {
+  frame: Frame | null;
+  labels: Record<string, string>;
+  highlight?: string;
+}) {
+  const { t, num } = useLang();
   const solutions = frame?.solutions ?? {};
   const ids = Object.keys(solutions);
-  if (ids.length === 0) return <p className="empty">No solution yet.</p>;
+  if (ids.length === 0) return <p className="empty">{t.panels.noSolution}</p>;
   return (
     <table>
       <thead>
         <tr>
-          <th scope="col">Architecture</th>
+          <th scope="col">{t.panels.architecture}</th>
           <th scope="col">
-            Error <span className="unit">m</span>
+            {t.panels.error} <span className="unit">m</span>
           </th>
           <th scope="col">
-            σ<sub>h</sub> <span className="unit">m</span>
+            {t.panels.sigmaH} <span className="unit">m</span>
           </th>
-          <th scope="col">Mode</th>
+          <th scope="col">{t.panels.mode}</th>
         </tr>
       </thead>
       <tbody>
         {ids.map((id) => {
           const s = solutions[id];
+          const mode = s.mode as NavMode;
           return (
             <tr key={id} className={highlight === id ? "highlight" : undefined}>
               <td>
                 <span
                   aria-hidden="true"
-                  style={{
-                    display: "inline-block",
-                    width: 9,
-                    height: 9,
-                    borderRadius: 2,
-                    background: ESTIMATOR_COLORS[id] ?? "#888",
-                    marginRight: 7,
-                  }}
+                  className="swatch"
+                  style={{ background: ESTIMATOR_COLORS[id] ?? "#888" }}
                 />
-                {ESTIMATOR_LABELS[id] ?? id}
+                {labels[id] ?? id}
               </td>
-              <td className="num">{s.err_m.toFixed(2)}</td>
-              <td className="num">{s.sigma_h_m.toFixed(2)}</td>
-              <td className={`num mode-${s.mode}`} title={NAV_MODE_HELP[s.mode as NavMode]}>
-                {s.mode}
+              <td className="num">{num(s.err_m, 2)}</td>
+              <td className="num">{num(s.sigma_h_m, 2)}</td>
+              <td className={`num mode-${mode}`} title={t.modeHelp[mode]}>
+                {mode}
               </td>
             </tr>
           );
@@ -149,12 +146,16 @@ export interface LogEntry {
   kind: "integrity" | "fault";
   headline: string;
   why: string;
+  /** Structured copy of the event, for the live commentary. Display uses the
+      pre-rendered strings above; the narrator needs the identifiers. */
+  estimator?: string;
+  sensor?: string;
+  to?: string;
 }
 
-export function EventLog({ entries }: { entries: LogEntry[] }) {
-  if (entries.length === 0) {
-    return <p className="empty">No integrity event yet. A nominal run should stay empty.</p>;
-  }
+export function EventLog({ entries, empty }: { entries: LogEntry[]; empty: string }) {
+  const { num } = useLang();
+  if (entries.length === 0) return <p className="empty">{empty}</p>;
   return (
     <div className="event-log" role="log" aria-live="polite">
       {entries
@@ -162,7 +163,7 @@ export function EventLog({ entries }: { entries: LogEntry[] }) {
         .reverse()
         .map((e, i) => (
           <div className={`event ${e.kind}`} key={`${e.t}-${i}`}>
-            <span className="t">{e.t.toFixed(2)}s</span>
+            <span className="t">{num(e.t, 2)}s</span>
             <span>{e.headline}</span>
             <span className="why">{e.why}</span>
           </div>

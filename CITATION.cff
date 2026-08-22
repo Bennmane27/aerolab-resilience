@@ -5,6 +5,10 @@ message: >-
   simulation-only research demonstrator and makes no claim of conformance to any
   aviation standard.
 type: software
+authors:
+  - family-names: Bennmane
+    given-names: Benn
+repository-code: "https://github.com/Bennmane27/aerolab-resilience"
 license: MIT
 version: 1.0.0
 date-released: "2026-08-21"

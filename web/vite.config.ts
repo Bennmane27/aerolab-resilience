@@ -11,7 +11,14 @@ export default defineConfig({
     target: "es2022",
     chunkSizeWarningLimit: 1500,
   },
-  server: { port: 5173, strictPort: false },
+  // Honour PORT when the environment sets one, so a preview harness can assign
+  // a free port and still find the server. No hardcoded default, so several
+  // sessions can preview the same project at once.
+  server: {
+    host: true,
+    port: process.env.PORT ? Number(process.env.PORT) : undefined,
+    strictPort: Boolean(process.env.PORT),
+  },
   // The Emscripten glue is already an ES module; leave it alone.
   optimizeDeps: { exclude: ["/wasm/aerolab.js"] },
 });

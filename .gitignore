@@ -11,3 +11,6 @@ compile_commands.json
 .cache/
 __pycache__/
 .venv/
+web/test-results/
+web/playwright-report/
+.claude/

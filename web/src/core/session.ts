@@ -162,9 +162,14 @@ export class AerolabCore {
   static async load(): Promise<Result<AerolabCore>> {
     try {
       // The glue is emitted by Emscripten with EXPORT_ES6, so it is a normal
-      // dynamic import. The path is relative to the deployed site root, which
-      // keeps the build working from any sub-path on GitHub Pages.
-      const factory = (await import(/* @vite-ignore */ `${import.meta.env.BASE_URL}wasm/aerolab.js`))
+      // dynamic import. The path must be resolved against the PAGE, not against
+      // this module: with base "./" the bundle lives under /assets/, and a
+      // relative specifier would look for /assets/wasm/aerolab.js and 404. This
+      // exact mistake shipped once — it worked in dev, where BASE_URL is "/",
+      // and broke only in the production build, which is why the end-to-end
+      // suite runs against `vite preview` rather than the dev server.
+      const wasmUrl = new URL(`${import.meta.env.BASE_URL}wasm/aerolab.js`, document.baseURI).href;
+      const factory = (await import(/* @vite-ignore */ wasmUrl))
         .default as (options?: object) => Promise<WasmModule>;
       const module = await factory({});
       const info = parse<BuildInfo>(module.AerolabSession.buildInfo());
@@ -218,12 +223,48 @@ export class AerolabCore {
   }
 }
 
-export const ESTIMATOR_LABELS: Record<string, string> = {
-  gnss_only: "GNSS only",
-  ins_dr: "INS dead reckoning",
-  ekf: "EKF (no integrity)",
-  integrity_ekf: "EKF + innovation gating",
-  solsep_ekf: "EKF + solution separation",
+// The estimator identifiers are the ones the C++ engine emits and the manifests
+// record; only their display names are translated.
+const ESTIMATOR_LABELS_BY_LANG: Record<string, Record<string, string>> = {
+  en: {
+    gnss_only: "GNSS only",
+    ins_dr: "INS dead reckoning",
+    ekf: "EKF (no integrity)",
+    integrity_ekf: "EKF + innovation gating",
+    solsep_ekf: "EKF + solution separation",
+  },
+  fr: {
+    gnss_only: "GNSS seul",
+    ins_dr: "Navigation à l’estime",
+    ekf: "EKF (sans intégrité)",
+    // "gating" is the English term; the French term of art for rejecting a
+    // measurement on its innovation test is "rejet sur innovation".
+    integrity_ekf: "EKF + rejet sur innovation",
+    solsep_ekf: "EKF + séparation de solutions",
+  },
+};
+
+export function estimatorLabels(lang: string): Record<string, string> {
+  return ESTIMATOR_LABELS_BY_LANG[lang] ?? ESTIMATOR_LABELS_BY_LANG.en;
+}
+
+export const ESTIMATOR_LABELS = ESTIMATOR_LABELS_BY_LANG.en;
+
+/**
+ * Short codes for the 3D view.
+ *
+ * The full names are too long to float beside a marker: with five architectures
+ * a few metres apart — which is the normal case early in a run, and the case
+ * worth reading — the labels overlapped each other and buried the aircraft.
+ * These are the same in both languages on purpose; they are technical tags, and
+ * the colour matches the solutions table and the chips.
+ */
+export const ESTIMATOR_SHORT: Record<string, string> = {
+  gnss_only: "GNSS",
+  ins_dr: "INS",
+  ekf: "EKF",
+  integrity_ekf: "EKF·G",
+  solsep_ekf: "EKF·SS",
 };
 
 export const ESTIMATOR_COLORS: Record<string, string> = {
@@ -241,13 +282,4 @@ export const SENSOR_STATE_GLYPH: Record<SensorState, string> = {
   SUSPECT: "▲",
   ISOLATED: "✖",
   UNAVAILABLE: "○",
-};
-
-export const NAV_MODE_HELP: Record<NavMode, string> = {
-  INITIALIZING: "The filter has not yet converged on a solution.",
-  NORMAL: "Every source is consistent and in use.",
-  DEGRADED: "At least one source has been isolated or is unavailable; the solution continues on the rest.",
-  DEAD_RECKONING: "No absolute position source is in use; the solution is coasting on inertial data alone.",
-  LOW_CONFIDENCE: "Too little redundancy remains to support an integrity claim. The position is still published but must not be trusted.",
-  UNSAFE: "The policy criteria are no longer met. The solution is not usable.",
 };

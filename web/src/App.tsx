@@ -4,25 +4,42 @@
 // this page; nothing is recomputed in TypeScript and no server is involved
 // (SYS-009, D-011).
 //
-// DEVIATION DEV-010 (docs/deviations.md) - manual fault injection.
-// UI-010 asks for manual injection of the faults a scenario permits. It is
-// implemented here as a scenario parameter (the fault start instant) plus a
-// "trigger now" control that restarts the run with that instant set to the
-// current simulated time - NOT as a runtime command that mutates a running
-// engine. The reason is BEN-014: a run must be exactly reconstructible from its
-// manifest. A button that injected a fault mid-run at an operator-chosen
-// instant would produce a run no manifest could describe, and every number the
-// page then displayed would be unreproducible.
+// Two performance rules hold this together, both learned the hard way:
+//
+//  1. The samples that feed the charts are accumulated in a REF, not in state.
+//     Pushing to a state array on every animation frame copies the whole array
+//     each time; at x4 speed that is a few hundred copies a second of an array
+//     that grows to thousands of entries, and the page visibly stalls. State is
+//     bumped on a timer instead, so React re-renders at a fixed rate whatever
+//     the simulation speed is.
+//
+//  2. The animation loop does NOT depend on the speed or on any other control.
+//     It reads them from a ref. An effect that lists `speed` as a dependency
+//     tears the loop down and rebuilds it on every speed change, which is
+//     exactly the stutter that used to appear when switching x1 to x4.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AerolabCore, type Frame, type ScenarioInfo } from "./core/session";
-import { ESTIMATOR_COLORS, ESTIMATOR_LABELS } from "./core/session";
-import { Scene3D } from "./components/Scene3D";
-import { EventLog, Panel, SensorHealth, SolutionTable, reasonHelp, type LogEntry } from "./components/Panels";
+import { ESTIMATOR_COLORS, estimatorLabels } from "./core/session";
+import { Scene3D, type CameraMode } from "./components/Scene3D";
+import { EventLog, Panel, SensorHealth, SolutionTable, type LogEntry } from "./components/Panels";
+import { Narrator } from "./components/Narrator";
 import { TimeChart, type Series } from "./components/Chart";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MethodologyView } from "./views/Methodology";
 import { FailureCatalogView } from "./views/FailureCatalog";
+import { GuideSections } from "./views/Guide";
+import { useLang } from "./i18n";
+import type { Lang } from "./i18n";
 
-type View = "landing" | "scenarios" | "lab" | "compare" | "engineering" | "report" | "methodology" | "failures";
+type View =
+  | "landing"
+  | "scenarios"
+  | "lab"
+  | "compare"
+  | "engineering"
+  | "report"
+  | "methodology"
+  | "failures";
 
 interface Sample {
   t: number;
@@ -38,12 +55,18 @@ interface CatalogEntry {
   name: string;
   description: string;
   objective: string;
+  faultCount: number;
+  durationS: number;
   text: string;
 }
 
-const REPO_URL = "https://github.com/your-account/aerolab-resilience";
+const REPO_URL = "https://github.com/Bennmane27/aerolab-resilience";
+const CHART_SAMPLE_STEP_S = 0.05;  // one chart sample per 50 ms of simulated time
+const UI_REFRESH_MS = 120;         // chart / table refresh cadence, speed independent
 
 export function App() {
+  const { t, lang, setLang } = useLang();
+
   const [view, setView] = useState<View>("landing");
   const [core, setCore] = useState<AerolabCore | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -52,29 +75,43 @@ export function App() {
   const [scenario, setScenario] = useState<ScenarioInfo | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [frame, setFrame] = useState<Frame | null>(null);
-  const [samples, setSamples] = useState<Sample[]>([]);
-  const [log, setLog] = useState<LogEntry[]>([]);
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [seed, setSeed] = useState(1);
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
   const [visible, setVisible] = useState<string[]>(Object.keys(ESTIMATOR_COLORS));
-  const [camera, setCamera] = useState<"chase" | "map" | "runway">("chase");
+  const [camera, setCamera] = useState<CameraMode>("chase");
+  const [follow, setFollow] = useState(true);
+  const [showLegend, setShowLegend] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [scrub, setScrub] = useState<number | null>(null);
+  const [runKey, setRunKey] = useState(0);
+  const [tick, setTick] = useState(0);  // bumped on a timer to refresh the views
 
+  const samplesRef = useRef<Sample[]>([]);
+  const logRef = useRef<LogEntry[]>([]);
   const framesRef = useRef<Frame[]>([]);
-  const rafRef = useRef<number | null>(null);
-  const lastTimeRef = useRef<number>(0);
-  const accumulatorRef = useRef<number>(0);
+  const speedRef = useRef(speed);
+  const runningRef = useRef(running);
+  const scenarioRef = useRef<ScenarioInfo | null>(scenario);
+  const coreRef = useRef<AerolabCore | null>(core);
+  const lastSampleTRef = useRef(-1);
 
-  // --- bootstrap -----------------------------------------------------------
+  speedRef.current = speed;
+  runningRef.current = running;
+  scenarioRef.current = scenario;
+  coreRef.current = core;
+
+  const labels = useMemo(() => estimatorLabels(lang), [lang]);
+
+  // ------------------------------------------------------------ bootstrap --
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const loaded = await AerolabCore.load();
       if (cancelled) return;
       if (!loaded.ok) {
-        setLoadError(loaded.error);
+        setLoadError(`${t.errors.coreLoad}\n${loaded.error}`);
         return;
       }
       setCore(loaded.value);
@@ -99,164 +136,223 @@ export function App() {
             name: readField(text, "name") ?? "",
             description: readField(text, "description") ?? "",
             objective: readField(text, "objective") ?? "",
+            faultCount: (text.match(/^\s{2}- id: F-/gm) ?? []).length,
+            durationS: Number(readField(text, "duration_s") ?? "0"),
           });
         }
         if (!cancelled) setCatalog(entries);
       } catch (e) {
-        if (!cancelled) setLoadError(`could not load the scenario catalogue: ${String(e)}`);
+        if (!cancelled) setLoadError(`${t.errors.catalogLoad}\n${String(e)}`);
       }
     })();
     return () => {
       cancelled = true;
     };
+    // Intentionally runs once: re-running it on a language change would reload
+    // the whole WebAssembly module for a label.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const resetRunState = useCallback(() => {
+  // Browser fullscreen and the expanded layout are kept in step: leaving
+  // fullscreen with Escape has to bring the strip back, or the page is left in
+  // a state the button no longer describes.
+  const toggleExpanded = useCallback(() => {
+    const next = !document.fullscreenElement;
+    if (next) {
+      document.documentElement.requestFullscreen?.().catch(() => setExpanded(true));
+    } else {
+      document.exitFullscreen?.().catch(() => setExpanded(false));
+    }
+    setExpanded(next);
+  }, []);
+
+  useEffect(() => {
+    const sync = () => setExpanded(document.fullscreenElement !== null);
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  const clearRunState = useCallback(() => {
+    samplesRef.current = [];
+    logRef.current = [];
     framesRef.current = [];
-    setSamples([]);
-    setLog([]);
+    lastSampleTRef.current = -1;
     setReport(null);
     setScrub(null);
     setFrame(null);
+    setRunKey((k) => k + 1);
   }, []);
 
   const openScenario = useCallback(
-    (entry: CatalogEntry, withSeed?: number) => {
-      if (!core) return;
-      core.recreateSession();
-      const loaded = core.loadScenario(entry.text, entry.file, configText);
+    (entry: CatalogEntry) => {
+      const c = coreRef.current;
+      if (!c) return;
+      c.recreateSession();
+      const loaded = c.loadScenario(entry.text, entry.file, configText);
       if (!loaded.ok) {
         setLoadError(loaded.error);
         return;
       }
-      const info = core.scenarioInfo();
+      const info = c.scenarioInfo();
       if (!info.ok) {
         setLoadError(info.error);
         return;
       }
-      const useSeed = withSeed ?? info.value.seed;
-      const r = core.reset(useSeed);
+      const r = c.reset(info.value.seed);
       if (!r.ok) {
         setLoadError(r.error);
         return;
       }
-      setSeed(useSeed);
+      setSeed(info.value.seed);
       setScenario(info.value);
       setSelectedFile(entry.file);
-      resetRunState();
-      const f = core.frame();
+      clearRunState();
+      const f = c.frame();
       if (f.ok) setFrame(f.value);
       setRunning(true);
       setView("lab");
     },
-    [core, configText, resetRunState]
+    [configText, clearRunState]
   );
 
+  // NOTE: takes an explicit optional number. The button below calls it as
+  // `() => restart()`, never as `onClick={restart}` — passing the MouseEvent as
+  // the seed is what used to abort the WebAssembly module and blank the page.
   const restart = useCallback(
     (nextSeed?: number) => {
-      if (!core || !scenario) return;
-      const useSeed = nextSeed ?? seed;
-      const r = core.reset(useSeed);
+      const c = coreRef.current;
+      if (!c || !scenarioRef.current) return;
+      const useSeed = typeof nextSeed === "number" && Number.isFinite(nextSeed) ? nextSeed : seed;
+      const r = c.reset(useSeed);
       if (!r.ok) {
         setLoadError(r.error);
         return;
       }
       setSeed(useSeed);
-      resetRunState();
-      const f = core.frame();
+      clearRunState();
+      const f = c.frame();
       if (f.ok) setFrame(f.value);
       setRunning(true);
     },
-    [core, scenario, seed, resetRunState]
+    [seed, clearRunState]
   );
 
-  // --- the run loop --------------------------------------------------------
+  // ------------------------------------------------------- the run loop -----
+  // Depends only on `core` and `runKey`. Speed and pause are read from refs.
   useEffect(() => {
-    if (!core || !running || !scenario) return;
+    if (!core || !scenario) return;
+    let raf = 0;
+    let previous = 0;
+    let accumulator = 0;
 
-    const tick = (now: number) => {
-      const previous = lastTimeRef.current || now;
-      lastTimeRef.current = now;
-      const elapsed = Math.min((now - previous) / 1000, 0.25);
-      accumulatorRef.current += elapsed * speed;
-
-      const dt = scenario.dt_s;
-      let steps = Math.floor(accumulatorRef.current / dt);
-      accumulatorRef.current -= steps * dt;
-      steps = Math.min(steps, 800);  // never let a stalled tab burn a whole run
-
-      if (steps > 0) {
-        core.step(steps);
-        const f = core.frame();
-        if (f.ok) {
-          const value = f.value;
-          setFrame(value);
-          framesRef.current.push(value);
-
-          const errors: Record<string, number> = {};
-          const sigma: Record<string, number> = {};
-          for (const [id, s] of Object.entries(value.solutions)) {
-            errors[id] = s.err_m;
-            sigma[id] = s.sigma_h_m;
-          }
-          const nis: Record<string, number> = {};
-          const threshold: Record<string, number> = {};
-          for (const [id, s] of Object.entries(value.sensors)) {
-            nis[id] = s.nis;
-            threshold[id] = s.threshold;
-          }
-          setSamples((prev) => [...prev, { t: value.t, errors, sigma, nis, threshold }]);
-
-          if (value.events.length > 0 || value.faults.length > 0) {
-            setLog((prev) => {
-              const additions: LogEntry[] = [];
-              for (const e of value.faults) {
-                additions.push({
-                  t: value.t,
-                  kind: "fault",
-                  headline: `FAULT ${e.activated ? "ARMED" : "ENDED"} — ${e.type} on ${e.target}`,
-                  why: e.activated
-                    ? "A synthetic transformation is now being applied to this source's measurements."
-                    : "The injected transformation has stopped; the source is nominal again.",
-                });
-              }
-              for (const e of value.events) {
-                additions.push({
-                  t: value.t,
-                  kind: "integrity",
-                  headline: `${ESTIMATOR_LABELS[e.estimator] ?? e.estimator}: ${e.sensor} ${e.from} → ${e.to}`,
-                  why: `${reasonHelp(e.reason)} (statistic ${e.statistic.toPrecision(3)}, threshold ${e.threshold.toPrecision(3)})`,
-                });
-              }
-              return [...prev, ...additions].slice(-400);
-            });
-          }
-        }
-        if (core.finished()) {
-          setRunning(false);
-          const r = core.report();
-          if (r.ok) setReport(r.value);
-          return;
-        }
+    const step = (now: number) => {
+      raf = requestAnimationFrame(step);
+      const currentScenario = scenarioRef.current;
+      if (!currentScenario) return;
+      if (!runningRef.current) {
+        previous = now;
+        return;
       }
-      rafRef.current = requestAnimationFrame(tick);
+      const elapsed = previous ? Math.min((now - previous) / 1000, 0.2) : 0;
+      previous = now;
+      accumulator += elapsed * speedRef.current;
+
+      const dt = currentScenario.dt_s;
+      let steps = Math.floor(accumulator / dt);
+      if (steps <= 0) return;
+      accumulator -= steps * dt;
+      steps = Math.min(steps, 600);
+
+      core.step(steps);
+      const f = core.frame();
+      if (!f.ok) return;
+      const value = f.value;
+      setFrame(value);
+      framesRef.current.push(value);
+
+      // Charts are sampled on simulated time, so the density of the plot does
+      // not depend on how fast the run is being played.
+      if (value.t - lastSampleTRef.current >= CHART_SAMPLE_STEP_S) {
+        lastSampleTRef.current = value.t;
+        const errors: Record<string, number> = {};
+        const sigma: Record<string, number> = {};
+        for (const [id, s] of Object.entries(value.solutions)) {
+          errors[id] = s.err_m;
+          sigma[id] = s.sigma_h_m;
+        }
+        const nis: Record<string, number> = {};
+        const threshold: Record<string, number> = {};
+        for (const [id, s] of Object.entries(value.sensors)) {
+          nis[id] = s.nis;
+          threshold[id] = s.threshold;
+        }
+        samplesRef.current.push({ t: value.t, errors, sigma, nis, threshold });
+      }
+
+      if (value.events.length > 0 || value.faults.length > 0) {
+        const additions: LogEntry[] = [];
+        for (const e of value.faults) {
+          const ev = eventsRef.current;
+          // The fault type and the target keep their engine identifiers: they
+          // are what the telemetry and the scenario file say. The sentence
+          // beside them is what gets translated, and it names the fault in
+          // words rather than repeating the token.
+          additions.push({
+            t: e.t ?? value.t,
+            kind: "fault",
+            headline: `${e.activated ? ev.faultArmed : ev.faultEnded} — ${e.type} · ${e.target}`,
+            why: e.activated
+              ? ev.faultArmedWhy(ev.faultTypes[e.type] ?? e.type, e.target)
+              : ev.faultEndedWhy(ev.faultTypes[e.type] ?? e.type, e.target),
+          });
+        }
+        for (const e of value.events) {
+          additions.push({
+            t: e.t ?? value.t,
+            kind: "integrity",
+            headline: `${labelsRef.current[e.estimator] ?? e.estimator} · ${eventsRef.current.sensorNames[e.sensor] ?? e.sensor} : ${e.from} → ${e.to}`,
+            estimator: e.estimator,
+            sensor: e.sensor,
+            to: e.to,
+            why: `${reasonRef.current[e.reason] ?? e.reason} (${e.statistic.toPrecision(3)} / ${e.threshold.toPrecision(3)})`,
+          });
+        }
+        logRef.current = [...logRef.current, ...additions].slice(-500);
+      }
+
+      if (core.finished()) {
+        runningRef.current = false;
+        setRunning(false);
+        const r = core.report();
+        if (r.ok) setReport(r.value);
+      }
     };
 
-    lastTimeRef.current = 0;
-    accumulatorRef.current = 0;
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    };
-  }, [core, running, speed, scenario]);
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [core, scenario, runKey]);
 
-  // Keyboard access to the main transport controls (UI-021).
+  // The loop reads translated labels through refs so that changing language
+  // does not restart it.
+  const labelsRef = useRef(labels);
+  const reasonRef = useRef(t.reasonHelp);
+  const eventsRef = useRef(t.eventLog);
+  labelsRef.current = labels;
+  reasonRef.current = t.reasonHelp;
+  eventsRef.current = t.eventLog;
+
+  // Fixed-rate refresh: decouples what the eye sees from how fast the core runs.
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), UI_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Keyboard transport (UI-021).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (view !== "lab") return;
       const target = e.target as HTMLElement | null;
-      if (target && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+      if (target && ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target.tagName)) return;
       if (e.code === "Space") {
         e.preventDefault();
         setRunning((r) => !r);
@@ -268,20 +364,26 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [view, restart]);
 
-  const displayFrame = scrub !== null && framesRef.current[scrub] ? framesRef.current[scrub] : frame;
-  const faultWindow = scenario && scenario.fault_start_s >= 0
-    ? { start: scenario.fault_start_s, end: scenario.fault_end_s }
-    : null;
+  const samples = samplesRef.current;
+  const displayFrame =
+    scrub !== null && framesRef.current[scrub] ? framesRef.current[scrub] : frame;
+  const faultWindow =
+    scenario && scenario.fault_start_s >= 0
+      ? { start: scenario.fault_start_s, end: scenario.fault_end_s }
+      : null;
 
   const errorSeries = useMemo<Series[]>(
     () =>
       visible.map((id) => ({
         id,
-        label: ESTIMATOR_LABELS[id] ?? id,
+        label: labels[id] ?? id,
         color: ESTIMATOR_COLORS[id] ?? "#888",
+        unit: "m",
         points: samples.map((s) => [s.t, s.errors[id] ?? 0] as [number, number]),
       })),
-    [samples, visible]
+    // `tick` is the refresh trigger; `samples` is a ref array mutated in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visible, labels, tick]
   );
 
   return (
@@ -290,39 +392,49 @@ export function App() {
         <div className="brand">
           AEROLAB <span>RESILIENCE</span>
         </div>
-        <div className="tagline">Break the navigation. Measure what survives.</div>
+        <div className="tagline">{t.tagline}</div>
         <nav className="nav" aria-label="Main">
           {(
             [
-              ["landing", "Overview"],
-              ["scenarios", "Scenarios"],
-              ["lab", "Live Lab"],
-              ["compare", "Compare"],
-              ["engineering", "Engineering"],
-              ["report", "Report"],
-              ["methodology", "Methodology"],
-              ["failures", "Failure catalog"],
+              ["landing", t.nav.landing],
+              ["scenarios", t.nav.scenarios],
+              ["lab", t.nav.lab],
+              ["compare", t.nav.compare],
+              ["engineering", t.nav.engineering],
+              ["report", t.nav.report],
+              ["methodology", t.nav.methodology],
+              ["failures", t.nav.failures],
             ] as Array<[View, string]>
           ).map(([id, label]) => (
             <button
               key={id}
+              type="button"
               className={view === id ? "active" : ""}
               onClick={() => setView(id)}
               aria-current={view === id ? "page" : undefined}
-              disabled={!core && id !== "landing" && id !== "methodology" && id !== "failures"}
+              disabled={!core && !["landing", "methodology", "failures"].includes(id)}
             >
               {label}
             </button>
           ))}
         </nav>
+        <div className="lang-switch" role="group" aria-label={t.langLabel}>
+          {(["fr", "en"] as Lang[]).map((l) => (
+            <button
+              key={l}
+              type="button"
+              className={lang === l ? "active" : ""}
+              onClick={() => setLang(l)}
+              aria-pressed={lang === l}
+            >
+              {l.toUpperCase()}
+            </button>
+          ))}
+        </div>
       </header>
 
-      {/* UI-022: the nature of the thing is stated on every screen, not buried. */}
-      <div className="disclaimer">
-        Simulation only. Every "attack" here is arithmetic applied to synthetic measurements inside
-        this page — no radio, no signal, no receiver. Not a certified system, not affiliated with any
-        manufacturer or authority.
-      </div>
+      {/* UI-022: stated on every screen, not buried. */}
+      <div className="disclaimer">{t.disclaimer}</div>
 
       <main className="content">
         {loadError && (
@@ -331,124 +443,143 @@ export function App() {
           </div>
         )}
 
-        {view === "landing" && <Landing onStart={() => setView("scenarios")} ready={core !== null} core={core} />}
+        <ErrorBoundary
+          message={t.errors.recovered}
+          resetLabel={t.errors.reload}
+          onReset={() => setView("landing")}
+        >
+          {view === "landing" && (
+            <Landing onStart={() => setView("scenarios")} ready={core !== null} core={core} />
+          )}
 
-        {view === "scenarios" && (
-          <ScenarioSelect
-            catalog={catalog}
-            selected={selectedFile}
-            onOpen={(entry) => openScenario(entry)}
-          />
-        )}
+          {view === "scenarios" && (
+            <ScenarioSelect catalog={catalog} selected={selectedFile} onOpen={openScenario} />
+          )}
 
-        {view === "lab" && (
-          <LiveLab
-            frame={displayFrame}
-            scenario={scenario}
-            log={log}
-            running={running}
-            speed={speed}
-            seed={seed}
-            visible={visible}
-            camera={camera}
-            frameCount={framesRef.current.length}
-            scrub={scrub}
-            errorSeries={errorSeries}
-            faultWindow={faultWindow}
-            onToggleRun={() => setRunning((r) => !r)}
-            onRestart={restart}
-            onSpeed={setSpeed}
-            onSeed={(s) => restart(s)}
-            onVisible={setVisible}
-            onCamera={setCamera}
-            onScrub={setScrub}
-          />
-        )}
+          {view === "lab" && (
+            <LiveLab
+              frame={displayFrame}
+              scenario={scenario}
+              log={logRef.current}
+              running={running}
+              speed={speed}
+              seed={seed}
+              visible={visible}
+              camera={camera}
+              follow={follow}
+              showLegend={showLegend}
+              expanded={expanded}
+              labels={labels}
+              runKey={runKey}
+              frameCount={framesRef.current.length}
+              scrub={scrub}
+              errorSeries={errorSeries}
+              faultWindow={faultWindow}
+              onToggleRun={() => setRunning((r) => !r)}
+              onRestart={restart}
+              onSpeed={setSpeed}
+              onSeed={(s) => restart(s)}
+              onVisible={setVisible}
+              onCamera={setCamera}
+              onFollow={setFollow}
+              onShowLegend={setShowLegend}
+              onToggleExpanded={toggleExpanded}
+              onScrub={setScrub}
+            />
+          )}
 
-        {view === "compare" && (
-          <ComparePanel samples={samples} scenario={scenario} faultWindow={faultWindow} frame={displayFrame} />
-        )}
+          {view === "compare" && (
+            <ComparePanel
+              samples={samples}
+              scenario={scenario}
+              faultWindow={faultWindow}
+              frame={displayFrame}
+              labels={labels}
+            />
+          )}
 
-        {view === "engineering" && (
-          <EngineeringPanel samples={samples} faultWindow={faultWindow} frame={displayFrame} />
-        )}
+          {view === "engineering" && (
+            <EngineeringPanel
+              samples={samples}
+              faultWindow={faultWindow}
+              frame={displayFrame}
+              labels={labels}
+            />
+          )}
 
-        {view === "report" && <ReportPanel report={report} scenario={scenario} running={running} />}
+          {view === "report" && (
+            <ReportPanel report={report} scenario={scenario} running={running} labels={labels} />
+          )}
 
-        {view === "methodology" && <MethodologyView repoUrl={REPO_URL} build={core?.build ?? null} />}
+          {view === "methodology" && (
+            <MethodologyView repoUrl={REPO_URL} build={core?.build ?? null} />
+          )}
 
-        {view === "failures" && <FailureCatalogView />}
+          {view === "failures" && <FailureCatalogView />}
+        </ErrorBoundary>
       </main>
     </div>
   );
 }
 
-// --------------------------------------------------------------- landing --
+// --------------------------------------------------------------- landing ---
 
-function Landing({ onStart, ready, core }: { onStart: () => void; ready: boolean; core: AerolabCore | null }) {
+function Landing({
+  onStart,
+  ready,
+  core,
+}: {
+  onStart: () => void;
+  ready: boolean;
+  core: AerolabCore | null;
+}) {
+  const { t } = useLang();
   return (
     <div className="pad">
       <div className="hero">
-        <h1>Can you make an aircraft lose its position?</h1>
-        <div className="quote">“Break the navigation. Measure what survives.”</div>
-        <p>
-          This page breaks the navigation sensors of a simulated aircraft on purpose — the satellite
-          fix disappears, or freezes, or quietly starts lying — and then measures which strategies
-          still know where the aircraft is, how fast they notice, and how often they cry wolf.
-        </p>
-        <p>
-          The engine running below is the same C++ core the offline benchmark uses, compiled to
-          WebAssembly. Nothing is faked for the demo: every number on screen comes out of the same
-          filters and the same integrity logic that produce the published results.
-        </p>
+        <h1>{t.landing.title}</h1>
+        <div className="quote">{t.landing.quote}</div>
+        <p>{t.landing.lead1}</p>
+        <p>{t.landing.lead2}</p>
         <div className="cta">
-          <button className="primary" onClick={onStart} disabled={!ready}>
-            {ready ? "Choose a scenario" : "Loading the core…"}
+          <button type="button" className="primary" onClick={onStart} disabled={!ready}>
+            {ready ? t.landing.start : t.landing.loading}
           </button>
           <a href={REPO_URL}>
-            <button>Source and benchmark report</button>
+            <button type="button">{t.landing.source}</button>
           </a>
         </div>
       </div>
 
       <div className="ladder">
-        <div className="panel step">
-          <div className="who">If you are not an engineer</div>
-          <div>
-            An aircraft works out where it is by combining several instruments. Some of them can be
-            fooled. This lab breaks one on purpose and shows you which combinations survive.
+        {[
+          [t.landing.audience.publicLabel, t.landing.audience.publicText],
+          [t.landing.audience.recruiterLabel, t.landing.audience.recruiterText],
+          [t.landing.audience.engineerLabel, t.landing.audience.engineerText],
+        ].map(([label, text]) => (
+          <div className="panel step" key={label}>
+            <div className="who">{label}</div>
+            <div>{text}</div>
           </div>
-        </div>
-        <div className="panel step">
-          <div className="who">If you are a recruiter</div>
-          <div>
-            C++17 core compiled native and to WebAssembly, deterministic simulation, controlled fault
-            injection, error-state Kalman filtering, integrity monitoring, solution separation, Monte
-            Carlo benchmarking, requirement traceability and a published failure catalog.
-          </div>
-        </div>
-        <div className="panel step">
-          <div className="who">If you work in navigation</div>
-          <div>
-            Closed-form truth, per-sensor noise models with sample and delivery timestamps, a
-            delivery-ordered measurement bus with rollback reprocessing, a 15-state error-state EKF,
-            NIS gating with persistence and recovery hysteresis, chi-square solution separation
-            against a GNSS-free sub-filter, and a snapshot RAIM-like residual test.
-          </div>
-        </div>
+        ))}
       </div>
+
+      {/* The explanation used to be a separate page. Someone arriving here got
+          three sentences and a button, and had to guess that the rest was one
+          menu item away. */}
+      <GuideSections onStart={onStart} />
 
       {core && (
         <p className="footer">
-          core {core.build.version} · commit {core.build.commit} · {core.build.compiler} · telemetry
-          schema v{core.build.telemetry_schema}
+          core {core.build.version} · commit {core.build.commit} · {core.build.compiler} · schema v
+          {core.build.telemetry_schema}
         </p>
       )}
     </div>
   );
 }
 
-// ------------------------------------------------------- scenario select --
+// ------------------------------------------------------- scenario select ---
 
 function ScenarioSelect({
   catalog,
@@ -459,44 +590,53 @@ function ScenarioSelect({
   selected: string | null;
   onOpen: (entry: CatalogEntry) => void;
 }) {
+  const { t, num, scenarioText } = useLang();
   if (catalog.length === 0) {
     return (
       <div className="pad">
-        <p className="empty">Loading the scenario catalogue…</p>
+        <p className="empty">{t.scenarios.loading}</p>
       </div>
     );
   }
   return (
     <div className="pad">
-      <h2 style={{ marginTop: 0 }}>Scenario catalogue</h2>
-      <p style={{ color: "var(--text-dim)", maxWidth: "76ch" }}>
-        Fourteen scenarios, each a versioned file with its own machine-readable acceptance block.
-        The same files drive the Monte Carlo campaign; this page reads them directly rather than a
-        copy, so what you run here is what the benchmark ran.
-      </p>
+      <h2 style={{ marginTop: 0 }}>{t.scenarios.title}</h2>
+      <p className="lead">{t.scenarios.lead}</p>
       <div className="scenario-grid">
-        {catalog.map((entry) => (
+        {catalog.map((entry) => {
+          // The scenario files are technical English; the interface is not.
+          const localised = scenarioText(entry.id);
+          return (
           <button
+            type="button"
             key={entry.file}
             className={`panel scenario-card ${selected === entry.file ? "active" : ""}`}
             onClick={() => onOpen(entry)}
           >
             <span className="id">{entry.id}</span>
-            <span className="name">{entry.name}</span>
-            <span className="desc">{entry.description}</span>
+            <span className="name">{localised?.name ?? entry.name}</span>
+            <span className="desc">{localised?.description ?? entry.description}</span>
             <span className="tags">
-              <span className="tag">{entry.objective.slice(0, 64)}{entry.objective.length > 64 ? "…" : ""}</span>
+              <span className="tag">
+                {entry.faultCount === 0
+                  ? t.scenarios.nominal
+                  : t.scenarios.faultCount(entry.faultCount)}
+              </span>
+              <span className="tag">
+                {t.scenarios.duration} {num(entry.durationS, 0)} s
+              </span>
             </span>
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// -------------------------------------------------------------- live lab --
+// -------------------------------------------------------------- live lab ---
 
-function LiveLab(props: {
+interface LiveLabProps {
   frame: Frame | null;
   scenario: ScenarioInfo | null;
   log: LogEntry[];
@@ -504,74 +644,179 @@ function LiveLab(props: {
   speed: number;
   seed: number;
   visible: string[];
-  camera: "chase" | "map" | "runway";
+  camera: CameraMode;
+  follow: boolean;
+  showLegend: boolean;
+  expanded: boolean;
+  labels: Record<string, string>;
+  runKey: number;
   frameCount: number;
   scrub: number | null;
   errorSeries: Series[];
   faultWindow: { start: number; end: number } | null;
   onToggleRun: () => void;
-  onRestart: () => void;
+  onRestart: (seed?: number) => void;
   onSpeed: (s: number) => void;
   onSeed: (s: number) => void;
   onVisible: (v: string[]) => void;
-  onCamera: (c: "chase" | "map" | "runway") => void;
+  onCamera: (c: CameraMode) => void;
+  onShowLegend: (v: boolean) => void;
+  onToggleExpanded: () => void;
+  onFollow: (f: boolean) => void;
   onScrub: (i: number | null) => void;
-}) {
+}
+
+function LiveLab(props: LiveLabProps) {
+  const { t, num, narration } = useLang();
   const { frame, scenario } = props;
   if (!scenario) {
     return (
       <div className="pad">
-        <p className="empty">Choose a scenario first.</p>
+        <p className="empty">{t.lab.chooseFirst}</p>
       </div>
     );
   }
+
+  const anyBelowGround =
+    frame !== null &&
+    props.visible.some((id) => {
+      const s = frame.solutions[id];
+      return s !== undefined && -s.d < 0;
+    });
+
   return (
-    <div className="lab">
+    <div className={props.expanded ? "lab is-expanded" : "lab"}>
       <div className="panel viewport">
-        <Scene3D frame={frame} scenario={scenario} visibleEstimators={props.visible} cameraMode={props.camera} />
-        {/* UI-004, stated on the view itself and not only in the legend. */}
+        <Scene3D
+          frame={frame}
+          scenario={scenario}
+          visibleEstimators={props.visible}
+          cameraMode={props.camera}
+          follow={props.follow}
+          labels={props.labels}
+          runKey={props.runKey}
+        />
+
+        {props.showLegend && (
+          <ViewportLegend frame={frame} labels={props.labels} visible={props.visible} />
+        )}
+
+        {/* UI-004, on the view itself and not only in a legend. */}
         <div className="truth-badge">
-          <b>— — SIMULATION TRUTH</b> — not available to any estimator
+          <b>— — {t.lab.truthBadge}</b> — {t.lab.truthNotAvailable}
           <br />
-          {scenario.id} · seed {props.seed} · t = {(frame?.t ?? 0).toFixed(2)} s ·{" "}
+          {scenario.id} · {t.lab.seed} {props.seed} · t = {num(frame?.t ?? 0, 2)} s ·{" "}
           {frame?.truth.phase ?? "—"}
         </div>
+
+        <div className="viewport-readout">
+          <span>
+            {t.lab.altitude} <b>{num(-(frame?.truth.d ?? 0), 0)}</b>
+            <span className="unit"> m</span>
+          </span>
+          <span>
+            {t.lab.groundSpeed}{" "}
+            <b>
+              {num(
+                Math.hypot(frame?.truth.vn ?? 0, frame?.truth.ve ?? 0),
+                0
+              )}
+            </b>
+            <span className="unit"> m/s</span>
+          </span>
+          <span>
+            {t.lab.roll} <b>{num(frame?.truth.roll_deg ?? 0, 1)}</b>
+            <span className="unit">°</span>
+          </span>
+          <span>
+            {t.lab.pitch} <b>{num(frame?.truth.pitch_deg ?? 0, 1)}</b>
+            <span className="unit">°</span>
+          </span>
+        </div>
+
+        <div className="viewport-hint">{t.lab.cameraHint}</div>
+
+        <button
+          type="button"
+          className="viewport-expand"
+          onClick={props.onToggleExpanded}
+          title={props.expanded ? t.lab.collapseHint : t.lab.expandHint}
+        >
+          {props.expanded ? `⤡ ${t.lab.collapse}` : `⤢ ${t.lab.expand}`}
+        </button>
+
+        {anyBelowGround && (
+          <div className="viewport-warning">
+            <b>▼ {t.lab.belowGround}</b> — {t.lab.belowGroundHelp}
+          </div>
+        )}
       </div>
 
       <div className="side">
-        <Panel title="Transport">
+        {/* First panel on purpose: it is the one that answers "what am I
+            looking at" for someone who does not already know. */}
+        <Panel title={narration.title}>
+          <Narrator
+            frame={frame}
+            scenario={scenario}
+            log={props.log}
+            labels={props.labels}
+            finished={!props.running && (props.frameCount > 0) && (frame?.t ?? 0) >= scenario.duration_s - 0.01}
+          />
+        </Panel>
+
+        <Panel title={t.lab.transport}>
           <div className="transport">
-            <button className="primary" onClick={props.onToggleRun}>
-              {props.running ? "Pause" : "Resume"}
+            <button type="button" className="primary" onClick={() => props.onToggleRun()}>
+              {props.running ? t.lab.pause : t.lab.resume}
             </button>
-            <button onClick={props.onRestart}>Restart</button>
+            {/* Wrapped on purpose: passing the handler directly would hand the
+                MouseEvent to the seed argument. */}
+            <button type="button" onClick={() => props.onRestart()}>
+              {t.lab.restart}
+            </button>
+            <span className="clock">
+              {num(frame?.t ?? 0, 2)} / {num(scenario.duration_s, 0)} s
+            </span>
+          </div>
+
+          <div className="control-row">
+            <span className="control-label">{t.lab.speed}</span>
             {[0.25, 1, 4].map((s) => (
-              <button key={s} className={props.speed === s ? "active" : ""} onClick={() => props.onSpeed(s)}>
+              <button
+                type="button"
+                key={s}
+                className={props.speed === s ? "active" : ""}
+                onClick={() => props.onSpeed(s)}
+              >
                 ×{s}
               </button>
             ))}
-            <span className="clock">
-              {(frame?.t ?? 0).toFixed(2)} / {scenario.duration_s.toFixed(0)} s
-            </span>
           </div>
-          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <label htmlFor="seed" style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              seed
+
+          <div className="control-row">
+            <label className="control-label" htmlFor="seed">
+              {t.lab.seed}
             </label>
             <input
               id="seed"
               type="number"
               defaultValue={props.seed}
-              style={{ width: 110 }}
+              key={props.seed}
+              style={{ width: 120 }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") props.onSeed(Number((e.target as HTMLInputElement).value));
+                if (e.key === "Enter") {
+                  const v = Number((e.target as HTMLInputElement).value);
+                  if (Number.isFinite(v)) props.onSeed(v);
+                }
               }}
             />
-            <span style={{ fontSize: 11, color: "var(--text-faint)" }}>press Enter to re-run</span>
+            <span className="control-hint">{t.lab.seedHint}</span>
           </div>
-          <div style={{ marginTop: 10 }}>
-            <label htmlFor="scrub" className="sr-only">
-              Scrub through recorded frames
+
+          <div className="control-row" style={{ display: "block" }}>
+            <label className="sr-only" htmlFor="scrub">
+              {t.lab.scrub}
             </label>
             <input
               id="scrub"
@@ -583,31 +828,70 @@ function LiveLab(props: {
               onChange={(e) => props.onScrub(Number(e.target.value))}
               style={{ width: "100%" }}
             />
-            <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
-              {props.running ? "Pause to scrub through the recorded run." : `frame ${(props.scrub ?? props.frameCount - 1) + 1} / ${props.frameCount}`}
+            <div className="control-hint">
+              {props.running
+                ? t.lab.scrubHint
+                : t.lab.scrubFrame((props.scrub ?? props.frameCount - 1) + 1, props.frameCount)}
             </div>
           </div>
-          <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
-            {(["chase", "map", "runway"] as const).map((c) => (
-              <button key={c} className={props.camera === c ? "active" : ""} onClick={() => props.onCamera(c)}>
-                {c}
+
+          <div className="control-row">
+            <span className="control-label">{t.lab.camera}</span>
+            {(
+              [
+                ["chase", t.lab.cameraChase],
+                ["map", t.lab.cameraMap],
+                ["runway", t.lab.cameraRunway],
+                ["free", t.lab.cameraFree],
+              ] as Array<[CameraMode, string]>
+            ).map(([mode, label]) => (
+              <button
+                type="button"
+                key={mode}
+                className={props.camera === mode ? "active" : ""}
+                onClick={() => props.onCamera(mode)}
+              >
+                {label}
               </button>
             ))}
           </div>
+
+          <div className="control-row">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={props.follow}
+                onChange={(e) => props.onFollow(e.target.checked)}
+              />
+              {t.lab.followAircraft}
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={props.showLegend}
+                onChange={(e) => props.onShowLegend(e.target.checked)}
+              />
+              {t.lab.showLegend}
+            </label>
+          </div>
+
+          <div className="control-hint">{t.lab.cameraModeHint}</div>
         </Panel>
 
-        <Panel title="Sensor health">
+        {/* No per-panel cap: the side column is the scroll container, so every
+            panel keeps its full height and one scrollbar reaches the end. */}
+        <Panel title={t.lab.sensorHealth}>
           <SensorHealth frame={frame} />
         </Panel>
 
-        <Panel title="Solutions">
-          <SolutionTable frame={frame} />
-          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <Panel title={t.lab.solutions}>
+          <SolutionTable frame={frame} labels={props.labels} />
+          <div className="chip-row">
             {Object.keys(ESTIMATOR_COLORS).map((id) => (
               <button
+                type="button"
                 key={id}
-                className={props.visible.includes(id) ? "active" : ""}
-                style={{ fontSize: 11, padding: "3px 7px" }}
+                className={`chip ${props.visible.includes(id) ? "active" : ""}`}
                 onClick={() =>
                   props.onVisible(
                     props.visible.includes(id)
@@ -616,48 +900,106 @@ function LiveLab(props: {
                   )
                 }
               >
-                {ESTIMATOR_LABELS[id]}
+                <i style={{ background: ESTIMATOR_COLORS[id] }} />
+                {props.labels[id]}
               </button>
             ))}
           </div>
         </Panel>
       </div>
 
-      <div className="strip grid" style={{ gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)" }}>
-        <Panel title="Position error against simulation truth">
+      <div className="strip">
+        <Panel title={t.lab.errorChart} scroll="fill">
           <TimeChart
             series={props.errorSeries}
-            yLabel="position error (m)"
+            yLabel={t.chart.positionError}
             faultWindow={props.faultWindow}
-            height={190}
+            height={230}
             logY
           />
         </Panel>
-        <Panel title="Integrity and fault events">
-          <EventLog entries={props.log} />
+        <Panel title={t.lab.events} scroll="fill">
+          <EventLog entries={props.log} empty={t.lab.noEvents} />
         </Panel>
       </div>
     </div>
   );
 }
 
-// --------------------------------------------------------------- compare --
+/**
+ * Legend for the 3D view.
+ *
+ * This replaces the labels that used to float beside each marker. With five
+ * architectures a couple of metres apart — the normal case, and the one worth
+ * reading — those labels covered each other and the aircraft, and abbreviating
+ * them did not fix it: the problem was text in the scene at all. The scene now
+ * carries shape, colour and position; this carries the words and the numbers,
+ * in one place that never moves and never overlaps anything.
+ */
+function ViewportLegend({
+  frame,
+  labels,
+  visible,
+}: {
+  frame: Frame | null;
+  labels: Record<string, string>;
+  visible: string[];
+}) {
+  const { t, num } = useLang();
+  return (
+    <div className="viewport-legend">
+      <h4>{t.lab.legend}</h4>
+      <div className="legend-row legend-truth">
+        <span className="legend-swatch legend-aircraft" aria-hidden="true">
+          ✈
+        </span>
+        <span className="legend-name">{t.lab.truthShort}</span>
+      </div>
+      {Object.keys(ESTIMATOR_COLORS).map((id) => {
+        const solution = frame?.solutions[id];
+        const shown = visible.includes(id);
+        const belowGround = solution !== undefined && -solution.d < 0;
+        return (
+          <div className={shown ? "legend-row" : "legend-row is-hidden"} key={id}>
+            <span
+              className="legend-swatch"
+              style={{ background: ESTIMATOR_COLORS[id] }}
+              aria-hidden="true"
+            />
+            <span className="legend-name">{labels[id] ?? id}</span>
+            <span className="legend-value">
+              {solution ? num(solution.err_m, 1) : "—"}
+              <span className="unit"> m</span>
+              {belowGround && <b className="legend-below"> ▼</b>}
+            </span>
+          </div>
+        );
+      })}
+      <p className="legend-note">{t.lab.legendScale}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- compare --
 
 function ComparePanel({
   samples,
   scenario,
   faultWindow,
   frame,
+  labels,
 }: {
   samples: Sample[];
   scenario: ScenarioInfo | null;
   faultWindow: { start: number; end: number } | null;
   frame: Frame | null;
+  labels: Record<string, string>;
 }) {
+  const { t, num, scenarioText } = useLang();
   if (!scenario) {
     return (
       <div className="pad">
-        <p className="empty">Choose a scenario first.</p>
+        <p className="empty">{t.lab.chooseFirst}</p>
       </div>
     );
   }
@@ -678,176 +1020,172 @@ function ComparePanel({
   return (
     <div className="pad">
       <h2 style={{ marginTop: 0 }}>
-        Compare — {scenario.id} {scenario.name}
+        {t.compare.title} — {scenario.id} {scenarioText(scenario.id)?.name ?? scenario.name}
       </h2>
-      <p style={{ color: "var(--text-dim)", maxWidth: "76ch" }}>
-        Every architecture below saw the identical measurement sequence: the truth is generated once
-        per tick and the same sensor stream is handed to all five. Any difference between these rows
-        is attributable to the architecture, not to luck.
-      </p>
+      <p className="lead">{t.compare.lead}</p>
 
-      <Panel title="Position error, all architectures, same data">
+      <Panel title={t.compare.chartTitle}>
         <TimeChart
           series={ids.map((id) => ({
             id,
-            label: ESTIMATOR_LABELS[id] ?? id,
+            label: labels[id] ?? id,
             color: ESTIMATOR_COLORS[id],
+            unit: "m",
             points: samples.map((s) => [s.t, s.errors[id] ?? 0] as [number, number]),
           }))}
-          yLabel="position error (m)"
+          yLabel={t.chart.positionError}
           faultWindow={faultWindow}
-          height={260}
+          height={280}
           logY
         />
       </Panel>
 
-      <Panel title="Metrics so far (this run only)" style={{ marginTop: 12 }}>
+      <Panel title={t.compare.metricsTitle} style={{ marginTop: 12 }}>
         <table>
           <thead>
             <tr>
-              <th scope="col">Architecture</th>
-              <th scope="col">RMSE <span className="unit">m</span></th>
-              <th scope="col">P95 <span className="unit">m</span></th>
-              <th scope="col">Max <span className="unit">m</span></th>
-              <th scope="col">Mode now</th>
+              <th scope="col">{t.panels.architecture}</th>
+              <th scope="col">
+                {t.compare.rmse} <span className="unit">m</span>
+              </th>
+              <th scope="col">
+                {t.compare.p95} <span className="unit">m</span>
+              </th>
+              <th scope="col">
+                {t.compare.max} <span className="unit">m</span>
+              </th>
+              <th scope="col">{t.compare.modeNow}</th>
             </tr>
           </thead>
           <tbody>
             {stats.map((s) => (
               <tr key={s.id}>
                 <td>
-                  <span
-                    aria-hidden="true"
-                    style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: ESTIMATOR_COLORS[s.id], marginRight: 7 }}
-                  />
-                  {ESTIMATOR_LABELS[s.id]}
+                  <span className="swatch" style={{ background: ESTIMATOR_COLORS[s.id] }} />
+                  {labels[s.id]}
                 </td>
-                <td className="num">{s.rms.toFixed(2)}</td>
-                <td className="num">{s.p95.toFixed(2)}</td>
-                <td className="num">{s.max.toFixed(2)}</td>
+                <td className="num">{num(s.rms, 2)}</td>
+                <td className="num">{num(s.p95, 2)}</td>
+                <td className="num">{num(s.max, 2)}</td>
                 <td className={`num mode-${s.mode}`}>{s.mode}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 0 }}>
-          These are single-run numbers on one seed. The published figures are distributions over a
-          thousand seeds per scenario; see the benchmark report in the repository.
-        </p>
+        <p className="caveat">{t.compare.caveat}</p>
       </Panel>
     </div>
   );
 }
 
-// ----------------------------------------------------------- engineering --
+// ------------------------------------------------------------ engineering --
 
 function EngineeringPanel({
   samples,
   faultWindow,
   frame,
+  labels,
 }: {
   samples: Sample[];
   faultWindow: { start: number; end: number } | null;
   frame: Frame | null;
+  labels: Record<string, string>;
 }) {
+  const { t, num } = useLang();
   const sensorIds = frame ? Object.keys(frame.sensors) : [];
   const gnssThreshold = frame?.sensors.gnss?.threshold ?? 0;
+  const sensorColors = ["#4d9be0", "#3fbf8f", "#e8c95a", "#cf5b7f", "#b58cd8"];
 
   return (
     <div className="pad">
-      <h2 style={{ marginTop: 0 }}>Engineering view</h2>
-      <p style={{ color: "var(--text-dim)", maxWidth: "76ch" }}>
-        The statistics the integrity policy actually decides on. The Normalized Innovation Squared is
-        the measured disagreement between a measurement and the filter prediction, normalised by the
-        uncertainty the filter claims. Under a consistent filter it averages the number of degrees of
-        freedom of the measurement; the dashed line is the gate.
-      </p>
+      <h2 style={{ marginTop: 0 }}>{t.engineering.title}</h2>
+      <p className="lead">{t.engineering.lead}</p>
 
-      <Panel title="Normalized Innovation Squared per source, against the gate">
+      <Panel title={t.engineering.nisTitle}>
         <TimeChart
           series={sensorIds.map((id, i) => ({
             id,
-            label: id,
-            color: ["#4d9be0", "#3fbf8f", "#e8c95a", "#cf5b7f", "#b58cd8"][i % 5],
+            label: t.panels.sensorNames[id] ?? id,
+            color: sensorColors[i % sensorColors.length],
             points: samples.map((s) => [s.t, s.nis[id] ?? 0] as [number, number]),
           }))}
-          yLabel="NIS (dimensionless)"
+          yLabel={t.chart.nis}
           faultWindow={faultWindow}
-          threshold={gnssThreshold > 0 ? { value: gnssThreshold, label: `gate ${gnssThreshold.toFixed(1)}` } : undefined}
-          height={230}
+          threshold={
+            gnssThreshold > 0
+              ? { value: gnssThreshold, label: `${t.panels.threshold} ${num(gnssThreshold, 1)}` }
+              : undefined
+          }
+          height={250}
           logY
         />
       </Panel>
 
-      <Panel title="Filter uncertainty: reported horizontal sigma" style={{ marginTop: 12 }}>
+      <Panel title={t.engineering.sigmaTitle} style={{ marginTop: 12 }}>
         <TimeChart
           series={Object.keys(ESTIMATOR_COLORS)
             .filter((id) => id !== "gnss_only")
             .map((id) => ({
               id,
-              label: ESTIMATOR_LABELS[id] ?? id,
+              label: labels[id] ?? id,
               color: ESTIMATOR_COLORS[id],
+              unit: "m",
               points: samples.map((s) => [s.t, s.sigma[id] ?? 0] as [number, number]),
             }))}
-          yLabel="sigma horizontal (m)"
+          yLabel={t.chart.sigmaHorizontal}
           faultWindow={faultWindow}
-          height={230}
+          height={250}
           logY
         />
-        <p style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 0 }}>
-          A filter whose reported sigma stays small while its true error grows is overconfident. That
-          gap, not the error alone, is what an integrity architecture has to catch.
-        </p>
+        <p className="caveat">{t.engineering.sigmaCaveat}</p>
       </Panel>
 
       {frame?.raim && (
-        <Panel title="RAIM-like residual test (pseudorange scenarios only)" style={{ marginTop: 12 }}>
+        <Panel title={t.engineering.raimTitle} style={{ marginTop: 12 }}>
           <dl className="kv">
-            <dt>statistic</dt>
-            <dd>{frame.raim.statistic.toFixed(2)}</dd>
-            <dt>threshold</dt>
-            <dd>{frame.raim.threshold.toFixed(2)}</dd>
-            <dt>detected</dt>
-            <dd>{frame.raim.detected ? "yes" : "no"}</dd>
-            <dt>excluded satellite</dt>
-            <dd>{frame.raim.excluded ? `#${frame.raim.excluded_satellite}` : "none"}</dd>
+            <dt>{t.engineering.raimStatistic}</dt>
+            <dd>{num(frame.raim.statistic, 2)}</dd>
+            <dt>{t.engineering.raimThreshold}</dt>
+            <dd>{num(frame.raim.threshold, 2)}</dd>
+            <dt>{t.engineering.raimDetected}</dt>
+            <dd>{frame.raim.detected ? t.engineering.yes : t.engineering.no}</dd>
+            <dt>{t.engineering.raimExcluded}</dt>
+            <dd>
+              {frame.raim.excluded ? `#${frame.raim.excluded_satellite}` : t.engineering.raimNone}
+            </dd>
           </dl>
-          <p style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 0 }}>
-            Educational residual test. No conformance to any RAIM or ARAIM standard is claimed and no
-            protection level is computed.
-          </p>
+          <p className="caveat">{t.engineering.raimCaveat}</p>
         </Panel>
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------- report --
+// ----------------------------------------------------------------- report --
 
 function ReportPanel({
   report,
   scenario,
   running,
+  labels,
 }: {
   report: Record<string, unknown> | null;
   scenario: ScenarioInfo | null;
   running: boolean;
+  labels: Record<string, string>;
 }) {
+  const { t, num } = useLang();
   if (!scenario) {
     return (
       <div className="pad">
-        <p className="empty">Choose a scenario first.</p>
+        <p className="empty">{t.lab.chooseFirst}</p>
       </div>
     );
   }
   if (!report) {
     return (
       <div className="pad">
-        <p className="empty">
-          {running
-            ? "The run is still going. The report is produced when it finishes."
-            : "No report yet — let a run finish."}
-        </p>
+        <p className="empty">{running ? t.report.running : t.report.none}</p>
       </div>
     );
   }
@@ -856,25 +1194,39 @@ function ReportPanel({
   const failures = (report.verdict_failures as string[]) ?? [];
   const json = JSON.stringify(report, null, 2);
 
+  const download = () => {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${String(report.scenario_id)}_seed${String(report.seed)}_manifest.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="pad">
-      <h2 style={{ marginTop: 0 }}>Run report</h2>
+      <h2 style={{ marginTop: 0 }}>{t.report.title}</h2>
 
-      <Panel title="Provenance">
+      <Panel title={t.report.provenance}>
         <dl className="kv">
-          <dt>scenario</dt>
-          <dd>{String(report.scenario_id)} — {String(report.scenario_name)}</dd>
-          <dt>seed</dt>
+          <dt>{t.report.scenario}</dt>
+          <dd>
+            {String(report.scenario_id)} — {String(report.scenario_name)}
+          </dd>
+          <dt>{t.report.seed}</dt>
           <dd>{String(report.seed)}</dd>
-          <dt>commit</dt>
+          <dt>{t.report.commit}</dt>
           <dd>{String(report.commit)}</dd>
-          <dt>compiler</dt>
+          <dt>{t.report.compiler}</dt>
           <dd>{String(report.compiler)}</dd>
-          <dt>scenario hash</dt>
+          <dt>{t.report.scenarioHash}</dt>
           <dd>{String(report.scenario_hash)}</dd>
-          <dt>config hash</dt>
+          <dt>{t.report.configHash}</dt>
           <dd>{String(report.config_hash)}</dd>
-          <dt>verdict</dt>
+          <dt>{t.report.verdict}</dt>
           <dd className={report.verdict === "PASS" ? "mode-NORMAL" : "mode-UNSAFE"}>
             {String(report.verdict)}
           </dd>
@@ -882,61 +1234,76 @@ function ReportPanel({
       </Panel>
 
       {failures.length > 0 && (
-        <Panel title="Acceptance failures" style={{ marginTop: 12 }}>
-          <ul>
+        <Panel title={t.report.failures} style={{ marginTop: 12 }}>
+          <ul className="mono-list">
             {failures.map((f, i) => (
-              <li key={i} style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
-                {f}
-              </li>
+              <li key={i}>{f}</li>
             ))}
           </ul>
         </Panel>
       )}
 
-      <Panel title="Metrics" style={{ marginTop: 12 }}>
+      <Panel title={t.report.metrics} style={{ marginTop: 12 }}>
         <div style={{ overflowX: "auto" }}>
           <table>
             <thead>
               <tr>
-                <th scope="col">Architecture</th>
-                <th scope="col">RMSE <span className="unit">m</span></th>
-                <th scope="col">P95 <span className="unit">m</span></th>
-                <th scope="col">Max <span className="unit">m</span></th>
-                <th scope="col">TTD <span className="unit">s</span></th>
-                <th scope="col">TTI <span className="unit">s</span></th>
-                <th scope="col">Avail</th>
-                <th scope="col">NIS/dof</th>
-                <th scope="col">Mode</th>
+                <th scope="col">{t.panels.architecture}</th>
+                <th scope="col">
+                  RMSE <span className="unit">m</span>
+                </th>
+                <th scope="col">
+                  P95 <span className="unit">m</span>
+                </th>
+                <th scope="col">
+                  Max <span className="unit">m</span>
+                </th>
+                <th scope="col">
+                  {t.report.ttd} <span className="unit">s</span>
+                </th>
+                <th scope="col">
+                  {t.report.tti} <span className="unit">s</span>
+                </th>
+                <th scope="col">{t.report.availability}</th>
+                <th scope="col">{t.report.nisPerDof}</th>
+                <th scope="col">{t.panels.mode}</th>
               </tr>
             </thead>
             <tbody>
               {channels.map((c, i) => (
                 <tr key={i}>
-                  <td>{ESTIMATOR_LABELS[String(c.estimator)] ?? String(c.estimator)}</td>
-                  <td className="num">{Number(c.position_rmse_m).toFixed(2)}</td>
-                  <td className="num">{Number(c.error_p95_m).toFixed(2)}</td>
-                  <td className="num">{Number(c.error_max_m).toFixed(2)}</td>
-                  <td className="num">{c.time_to_detect_s === null ? "—" : Number(c.time_to_detect_s).toFixed(2)}</td>
-                  <td className="num">{c.time_to_isolate_s === null ? "—" : Number(c.time_to_isolate_s).toFixed(2)}</td>
-                  <td className="num">{(Number(c.availability) * 100).toFixed(1)}%</td>
-                  <td className="num">{Number(c.nis_mean_normalised).toFixed(2)}</td>
+                  <td>{labels[String(c.estimator)] ?? String(c.estimator)}</td>
+                  <td className="num">{num(Number(c.position_rmse_m), 2)}</td>
+                  <td className="num">{num(Number(c.error_p95_m), 2)}</td>
+                  <td className="num">{num(Number(c.error_max_m), 2)}</td>
+                  <td className="num">
+                    {c.time_to_detect_s === null ? "—" : num(Number(c.time_to_detect_s), 2)}
+                  </td>
+                  <td className="num">
+                    {c.time_to_isolate_s === null ? "—" : num(Number(c.time_to_isolate_s), 2)}
+                  </td>
+                  <td className="num">{num(Number(c.availability) * 100, 1)} %</td>
+                  <td className="num">{num(Number(c.nis_mean_normalised), 2)}</td>
                   <td className={`num mode-${String(c.final_mode)}`}>{String(c.final_mode)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p style={{ fontSize: 12, color: "var(--text-faint)" }}>
-          A dash in time-to-detect means no detection was raised. It is deliberately not shown as
-          zero: averaging a missed detection as an instant response is the easiest way to publish a
-          flattering benchmark.
-        </p>
+        <p className="caveat">{t.report.dashHelp}</p>
       </Panel>
 
-      <Panel title="Full manifest (UI-023)" style={{ marginTop: 12 }}>
-        <p style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          This is the same JSON the native CLI writes next to a run. Select it and copy to keep a
-          record of exactly what produced the numbers above.
+      <Panel
+        title={t.report.manifest}
+        style={{ marginTop: 12 }}
+        actions={
+          <button type="button" onClick={download}>
+            {t.report.download}
+          </button>
+        }
+      >
+        <p className="caveat" style={{ marginTop: 0 }}>
+          {t.report.manifestHelp}
         </p>
         <pre style={{ maxHeight: 380, overflow: "auto", margin: 0 }}>{json}</pre>
       </Panel>
