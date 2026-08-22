@@ -14,3 +14,4 @@ __pycache__/
 web/test-results/
 web/playwright-report/
 .claude/
+docs/media/frames/

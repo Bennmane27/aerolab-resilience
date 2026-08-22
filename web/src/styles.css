@@ -587,7 +587,11 @@ tr.highlight td { background: rgba(77, 155, 224, 0.08); }
 }
 /* Collapsed: the header only, and nothing is resizable while there is nothing
    to resize. */
+/* Collapsed it must shrink to its header. Leaving `bottom` set kept the box
+   spanning the whole column with only the header painted, so an invisible
+   372 px panel went on swallowing drags meant for the 3D view. */
 .narrator.is-collapsed {
+  bottom: auto;
   height: auto;
   min-height: 0;
   resize: none;

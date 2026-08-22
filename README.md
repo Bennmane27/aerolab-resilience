@@ -16,6 +16,20 @@ floor**: the drift rate below which each integrity policy stops noticing that a
 source is lying — and, as it turned out, which detector was doing the work all
 along.
 
+![The Live Lab: a spoofed satellite fix pulls one solution away from the truth while the integrity architectures hold](docs/media/aerolab-demo.gif)
+
+*SCN-003, replayed. A 100 m position spoof is injected at t = 30 s. The white
+aircraft is the simulation truth; each coloured reticle is where one architecture
+believes it is, and the line between them is the error. The satellite-only
+solution follows the spoof out to ninety metres, the dead-reckoning solution
+drifts on its own, and the two integrity architectures isolate the source and
+stay within three metres. Recorded from the running page —
+[`web/scripts/record-demo.mjs`](web/scripts/record-demo.mjs).*
+
+**[▶ Run it yourself](https://bennmane27.github.io/aerolab-resilience/)** — the
+C++ core compiled to WebAssembly, running in your browser. Nothing is
+precomputed.
+
 ---
 
 ## What this is not
